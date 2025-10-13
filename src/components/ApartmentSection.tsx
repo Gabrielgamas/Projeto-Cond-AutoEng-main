@@ -8,10 +8,15 @@ import Galeria9Fotos from "./Galeria9Fotos";
 
 type Props = Readonly<{
   apto: Apartamento;
-  onSave: (apto: Apartamento) => void; // chama upsertApartamento
+  onSave: (apto: Apartamento) => void;
+  label?: string; // chama upsertApartamento
 }>;
 
-export default function ApartmentSection({ apto, onSave }: Props) {
+export default function ApartmentSection({
+  apto,
+  onSave,
+  label = "Apartamento",
+}: Props) {
   // abre por padrão
   const [open, setOpen] = useState<boolean>(true);
 
@@ -41,7 +46,9 @@ export default function ApartmentSection({ apto, onSave }: Props) {
           >
             ▶
           </span>
-          <span>Apartamento {apto.id}</span>
+          <span>
+            {label} {apto.id}
+          </span>
         </button>
         <span className="text-sm text-gray-500">Fotos: {fotosCount}/9</span>
       </div>

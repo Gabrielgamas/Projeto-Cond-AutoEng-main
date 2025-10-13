@@ -3,7 +3,6 @@ import jsPDF from "jspdf";
 import autoTable, { type CellHookData, type CellInput } from "jspdf-autotable";
 import type {
   Condominio,
-  Bloco,
   Apartamento,
   ChecklistComodo,
   TabelaComodos,
@@ -40,7 +39,7 @@ const fmtDate = (d: Date) =>
 /** ----------------- Logo: carregamento robusto (JPEG/PNG) ----------------- */
 async function loadPublicLogo(): Promise<string | undefined> {
   try {
-    const response = await fetch("/logo.png"); // ← novo caminho
+    const response = await fetch("/logo.png");
     const blob = await response.blob();
     const reader = new FileReader();
 
@@ -76,7 +75,6 @@ function footerLogo(doc: jsPDF, logoDataUrl?: string) {
       const alt: "PNG" | "JPEG" = fmt === "PNG" ? "JPEG" : "PNG";
       doc.addImage(logoDataUrl, alt, PW - MARGIN - w, PH - MARGIN - h, w, h);
     } catch {
-      // eslint-disable-next-line no-console
       console.warn("Logo não pôde ser inserido; continuando sem logo.");
     }
   }
@@ -128,18 +126,22 @@ function addCoverPage(doc: jsPDF, cond: Condominio, logo?: string) {
   footerLogo(doc, logo);
 }
 
-function addIndexPage(doc: jsPDF, logo?: string) {
+function addIndexPage(doc: jsPDF, cond: Condominio, logo?: string) {
   doc.addPage("a4", "landscape");
   topBar(doc);
   sectionTitle(doc, "Índice", 50);
 
   doc.setFont("helvetica", "normal");
   doc.setFontSize(14);
+
+  const selecionadas =
+    cond.tipo === "CASAS" ? "Casas Selecionadas" : "Apartamentos Selecionados";
+
   const itens = [
     "1. Objetivo",
     "2. Normas Aplicáveis",
     "3. Metodologia",
-    "4. Casas Selecionadas",
+    `4. ${selecionadas}`,
     "5. Locais Auditados e Situações Encontradas",
     "6. Considerações",
     "7. Conclusão",
@@ -209,56 +211,94 @@ function addMetodologiaPage(doc: jsPDF, logo?: string) {
   footerLogo(doc, logo);
 }
 
-function addCasasSelecionadasPage(doc: jsPDF, cond: Condominio, logo?: string) {
+/** -------- “Unidades Selecionadas” (blocos/apartamentos ou casas) -------- */
+function addUnidadesSelecionadasPage(
+  doc: jsPDF,
+  cond: Condominio,
+  logo?: string
+) {
   doc.addPage("a4", "landscape");
   topBar(doc);
-  sectionTitle(doc, "Casas Selecionadas", 60);
+
+  const titulo =
+    cond.tipo === "CASAS" ? "Casas Selecionadas" : "Apartamentos Selecionados";
+  sectionTitle(doc, titulo, 60);
 
   doc.setFont("helvetica", "bold");
   doc.setFontSize(11);
-  doc.text("Casas:", MARGIN + 8, 90);
 
-  doc.setFont("helvetica", "normal");
   const colW = (PW - 2 * MARGIN - 16) / 3;
   let colX = MARGIN + 8;
   let y = 104;
   const lineH = 9;
 
-  const blocos = cond.blocos
-    .slice()
-    .sort((a, b) => a.id.localeCompare(b.id, "pt-BR", { numeric: true }));
-
-  blocos.forEach((b, idx) => {
-    const aptos = b.apartamentos
+  if (cond.tipo === "CASAS") {
+    const casas = (cond.casas ?? [])
       .slice()
-      .sort((a, b2) => a.id.localeCompare(b2.id, "pt-BR", { numeric: true }));
-    const aptosStr = aptos.map((a) => a.id).join("   ");
+      .sort((a, b) => a.id.localeCompare(b.id, "pt-BR", { numeric: true }));
 
-    if (y > PH - 30) {
-      y = 104;
-      colX += colW;
-    }
-    const blocoLabel = `Bloco ${b.id}:`;
-    doc.setFont("helvetica", "bold");
-    doc.text(blocoLabel, colX, y);
+    doc.text("Casas:", MARGIN + 8, 90);
     doc.setFont("helvetica", "normal");
-    doc.text(aptosStr, colX + doc.getTextWidth(blocoLabel) + 2, y);
 
-    y += lineH;
+    const ids = casas.map((c) => c.id);
+    for (let i = 0; i < ids.length; i++) {
+      if (y > PH - 30) {
+        y = 104;
+        colX += colW;
+      }
+      doc.text(String(ids[i]), colX, y);
+      y += lineH;
 
-    if (
-      colX > MARGIN + 8 + 2 * colW &&
-      y > PH - 30 &&
-      idx < blocos.length - 1
-    ) {
-      doc.addPage("a4", "landscape");
-      topBar(doc);
-      sectionTitle(doc, "Casas Selecionadas (continuação)", 60);
-      doc.setFont("helvetica", "normal");
-      colX = MARGIN + 8;
-      y = 104;
+      if (colX > MARGIN + 8 + 2 * colW && y > PH - 30 && i < ids.length - 1) {
+        doc.addPage("a4", "landscape");
+        topBar(doc);
+        sectionTitle(doc, `${titulo} (continuação)`, 60);
+        doc.setFont("helvetica", "normal");
+        colX = MARGIN + 8;
+        y = 104;
+      }
     }
-  });
+  } else {
+    // BLOCOS + APARTAMENTOS
+    const blocos = cond.blocos
+      .slice()
+      .sort((a, b) => a.id.localeCompare(b.id, "pt-BR", { numeric: true }));
+
+    doc.text("Blocos / Apartamentos:", MARGIN + 8, 90);
+    doc.setFont("helvetica", "normal");
+
+    blocos.forEach((b, idx) => {
+      const aptos = b.apartamentos
+        .slice()
+        .sort((a, b2) => a.id.localeCompare(b2.id, "pt-BR", { numeric: true }));
+      const aptosStr = aptos.map((a) => a.id).join("   ");
+
+      if (y > PH - 30) {
+        y = 104;
+        colX += colW;
+      }
+      const blocoLabel = `Bloco ${b.id}:`;
+      doc.setFont("helvetica", "bold");
+      doc.text(blocoLabel, colX, y);
+      doc.setFont("helvetica", "normal");
+      doc.text(aptosStr, colX + doc.getTextWidth(blocoLabel) + 2, y);
+
+      y += lineH;
+
+      if (
+        colX > MARGIN + 8 + 2 * colW &&
+        y > PH - 30 &&
+        idx < blocos.length - 1
+      ) {
+        doc.addPage("a4", "landscape");
+        topBar(doc);
+        sectionTitle(doc, `${titulo} (continuação)`, 60);
+        doc.setFont("helvetica", "normal");
+        colX = MARGIN + 8;
+        y = 104;
+      }
+    });
+  }
 
   footerLogo(doc, logo);
 }
@@ -289,7 +329,7 @@ function addConclusaoPage(doc: jsPDF, logo?: string) {
   doc.setFont("helvetica", "normal");
   doc.setFontSize(12);
   const texto =
-    "O presente laudo técnico apresentou a análise das instalações elétricas das casas " +
+    "O presente laudo técnico apresentou a análise das instalações elétricas das unidades " +
     "supracitadas, indicando as inconformidades através da descrição do problema e da " +
     "apresentação das imagens realizadas durante os testes. A partir dos resultados " +
     "encontrados, sugerimos que seja criado um procedimento de checklist de todo o " +
@@ -314,13 +354,12 @@ const tableBase = {
 
 function drawTick(doc: jsPDF, x: number, y: number, w: number, h: number) {
   const cx = x + w / 2;
-  const cy = y + h / 2 + 0.2; // leve ajuste vertical
-  const s = Math.min(w, h) * 0.32; // escala: menor que antes
-  const lw = Math.max(0.35, s * 0.06); // linha mais fina
+  const cy = y + h / 2 + 0.2;
+  const s = Math.min(w, h) * 0.32;
+  const lw = Math.max(0.35, s * 0.06);
 
   doc.setDrawColor(0, 128, 0);
   doc.setLineWidth(lw);
-  // dois traços do "check"
   doc.line(cx - s * 0.6, cy + s * 0.1, cx - s * 0.18, cy + s * 0.6);
   doc.line(cx - s * 0.18, cy + s * 0.6, cx + s * 0.75, cy - s * 0.45);
 }
@@ -328,7 +367,7 @@ function drawTick(doc: jsPDF, x: number, y: number, w: number, h: number) {
 function drawCross(doc: jsPDF, x: number, y: number, w: number, h: number) {
   const cx = x + w / 2;
   const cy = y + h / 2 + 0.2;
-  const s = Math.min(w, h) * 0.2; // um pouco menor
+  const s = Math.min(w, h) * 0.2;
   const lw = Math.max(0.35, s * 0.06);
 
   doc.setDrawColor(200, 0, 0);
@@ -350,15 +389,13 @@ function tableComodos(
     "Tensão e Corrente",
   ];
 
+  // ✅ sem "any"
   const body: CellInput[][] = (
-    Object.keys(comodos) as (keyof TabelaComodos)[]
-  ).map((r) => [r, ...COLS.map((c) => !!comodos[r][c])]);
+    Object.entries(comodos) as [keyof TabelaComodos, ChecklistComodo][]
+  ).map(([room, checklist]) => [room, ...COLS.map((c) => !!checklist[c])]);
 
   const yTitle = 10;
-
-  const y = yTitle;
-
-  const yAfterTitle = yTitle + 8; // controla a distância do título para o conteúdo
+  const yAfterTitle = yTitle + 8;
 
   autoTable(doc, {
     ...tableBase,
@@ -367,8 +404,6 @@ function tableComodos(
     body,
     margin: { left: MARGIN, right: PW - (MARGIN + width) },
     tableWidth: width,
-
-    // ⬇️ Limpa o texto ANTES de imprimir
     didParseCell: (data: CellHookData) => {
       if (data.section === "body" && data.column.index > 0) {
         data.cell.text = [];
@@ -380,7 +415,7 @@ function tableComodos(
         const raw = cell.raw as boolean;
         if (raw) drawTick(doc, cell.x, cell.y, cell.width, cell.height);
         else drawCross(doc, cell.x, cell.y, cell.width, cell.height);
-        cell.text = []; // remove conteúdo textual
+        cell.text = [];
       }
     },
   });
@@ -409,7 +444,6 @@ function tableQuadro(
     body,
     margin: { left: MARGIN, right: PW - (MARGIN + width) },
     tableWidth: width,
-    // ⬇️ Limpa o texto ANTES de imprimir
     didParseCell: (data: CellHookData) => {
       if (data.section === "body" && data.column.index > 0) {
         data.cell.text = [];
@@ -448,7 +482,6 @@ function tableEspecificacoes(
     body,
     margin: { left: MARGIN, right: PW - (MARGIN + width) },
     tableWidth: width,
-    // ⬇️ Limpa o texto ANTES de imprimir
     didParseCell: (data: CellHookData) => {
       if (data.section === "body" && data.column.index > 0) {
         data.cell.text = [];
@@ -513,7 +546,6 @@ function photosGridRight(
           const alt: "PNG" | "JPEG" = fmt === "PNG" ? "JPEG" : "PNG";
           doc.addImage(src, alt, x + 1, y + 1, cellW - 2, cellH - 2);
         } catch {
-          // eslint-disable-next-line no-console
           console.warn("Foto inválida/inesperada; pulando este slot.");
         }
       }
@@ -546,11 +578,9 @@ function observacoesBox2Cols(
   const colGap = 0;
   const colW = (totalW - colGap) / 2;
 
-  // Altura disponível na página a partir do startY
   const availH = PH - MARGIN - startY;
-  const contentH = Math.max(20, availH - titleH); // garante algo mínimo
+  const contentH = Math.max(20, availH - titleH);
 
-  // Tarja de título
   doc.setFillColor(...NAVY);
   doc.rect(MARGIN, startY, totalW, titleH, "F");
   doc.setTextColor(255, 255, 255);
@@ -560,27 +590,19 @@ function observacoesBox2Cols(
   doc.setTextColor(0, 0, 0);
 
   const yTop = startY + titleH;
-  const lineH = 10; // altura por linha de observação
+  const lineH = 10;
 
-  // Quantas linhas cabem por coluna nesta página
   const linesPerCol = Math.max(1, Math.floor((contentH - 6) / lineH));
 
   const erros = apto.erros ?? [];
-  const total = erros.length;
-
-  // Desenha o contêiner das duas colunas
   doc.setDrawColor(0);
   doc.rect(MARGIN, yTop, colW, contentH);
   doc.rect(MARGIN + colW + colGap, yTop, colW, contentH);
 
-  // Quantos itens cabem no bloco atual (duas colunas)
   const capThisPage = linesPerCol * 2;
-
-  // fatia a lista para esta página
   const pageItems = erros.slice(0, capThisPage);
   const restItems = erros.slice(capThisPage);
 
-  // Escreve as linhas na coluna esquerda e direita
   const writeCol = (items: typeof erros, x: number, startIndex: number) => {
     let y = yTop + 7;
     for (let i = 0; i < items.length; i++) {
@@ -594,13 +616,11 @@ function observacoesBox2Cols(
           ].join("")
         : "";
 
-      // texto
       doc.setFont("helvetica", "normal");
       doc.setFontSize(10);
       const wrapped = doc.splitTextToSize(txt, colW - 8);
       doc.text(wrapped, x + 4, y);
 
-      // linha horizontal guia
       doc.setDrawColor(200);
       doc.line(x, y + 2.8, x + colW, y + 2.8);
 
@@ -609,38 +629,32 @@ function observacoesBox2Cols(
     }
   };
 
-  // esquerda
   writeCol(
     pageItems.slice(0, Math.min(linesPerCol, pageItems.length)),
     MARGIN,
     0
   );
-
-  // direita
   const rightSlice = pageItems.slice(linesPerCol);
   writeCol(rightSlice, MARGIN + colW + colGap, linesPerCol);
 
-  // Se sobrou conteúdo, cria nova página e continua
   if (restItems.length > 0) {
     doc.addPage("a4", "landscape");
-    // cabeçalho estreito (faixa azul) para manter a identidade
     doc.setFillColor(...NAVY);
     doc.rect(0, 0, PW, 6, "F");
-    // recomeça a caixa em nova página na mesma posição vertical
-    // (pode mudar start para 20 se quiser mais espaço)
     return observacoesBox2Cols(doc, { ...apto, erros: restItems }, 20);
   }
 
   return yTop + contentH;
 }
 
-/** ----------------- Página por apartamento ----------------- */
-function apartmentChecklistPage(
+/** ----------------- Página por unidade (apto/casa) ----------------- */
+function unitChecklistPage(
   doc: jsPDF,
   cond: Condominio,
-  bloco: Bloco,
-  apto: Apartamento,
-  logo?: string
+  unidade: Apartamento,
+  logo: string | undefined,
+  label: "Apartamento" | "Casa",
+  blocoId?: string
 ) {
   doc.addPage("a4", "landscape");
 
@@ -662,75 +676,62 @@ function apartmentChecklistPage(
     }
   }
 
-  // Título
-
+  // Título centralizado com partes coloridas
   doc.setFont("helvetica", "bold");
   doc.setFontSize(18);
 
-  // partes da frase
-  const textoBase = "Checklist da Instalação Elétrica do Apartamento ";
-  const aptoFmt = apto.id.padStart(2, "0");
-  const textoBloco = " Bloco ";
-  const textoFinal = bloco.id;
+  const textoBase = `Checklist da Instalação Elétrica do ${label} `;
+  const idFmt = unidade.id.padStart(2, "0");
+  const textoBloco = blocoId ? " Bloco " : "";
+  const textoFinal = blocoId ?? "";
 
-  // calcula largura de cada trecho
   const wBase = doc.getTextWidth(textoBase);
-  const wApto = doc.getTextWidth(aptoFmt);
+  const wId = doc.getTextWidth(idFmt);
   const wBloco = doc.getTextWidth(textoBloco);
-  const wId = doc.getTextWidth(textoFinal);
+  const wBlocoId = doc.getTextWidth(textoFinal);
 
-  // calcula posição inicial pra centralizar tudo
-  const totalWidth = wBase + wApto + wBloco + wId;
+  const totalWidth = wBase + wId + wBloco + wBlocoId;
   const startX = (PW - totalWidth) / 2;
   const z = 10;
 
-  // desenha partes com suas cores
   let cursor = startX;
 
-  // parte azul — “Checklist da Instalação Elétrica do Apartamento”
   doc.setTextColor(...NAVY);
   doc.text(textoBase, cursor, z);
   cursor += wBase;
 
-  // parte laranja — número do apartamento
   doc.setTextColor(...ORANGE);
-  doc.text(aptoFmt, cursor, z);
-  cursor += wApto;
+  doc.text(idFmt, cursor, z);
+  cursor += wId;
 
-  // parte azul — “ Bloco ”
-  doc.setTextColor(...NAVY);
-  doc.text(textoBloco, cursor, z);
-  cursor += wBloco;
+  if (blocoId) {
+    doc.setTextColor(...NAVY);
+    doc.text(textoBloco, cursor, z);
+    cursor += wBloco;
 
-  // parte laranja — número do bloco
-  doc.setTextColor(...ORANGE);
-  doc.text(textoFinal, cursor, z);
+    doc.setTextColor(...ORANGE);
+    doc.text(textoFinal, cursor, z);
+  }
 
-  // volta para preto, se for continuar desenhando
   doc.setTextColor(0, 0, 0);
 
-  // Layout: tabelas à esquerda, fotos à direita
-
-  // 📐 queremos dividir a largura total (PW - 2*MARGIN) em 2 partes iguais
+  // layout 2 colunas
   const usableWidth = PW - 2 * MARGIN;
-  const halfWidth = usableWidth / 2 - 3; // -3 pra dar espaçamento central
-
-  // coluna esquerda = tabelas
+  const halfWidth = usableWidth / 2 - 3;
   const leftW = halfWidth;
   const leftX = MARGIN;
-
-  // coluna direita = fotos
-  const rightX = MARGIN + halfWidth + 6; // 6mm de espaço entre colunas
+  const rightX = MARGIN + halfWidth + 6;
   const rightW = halfWidth;
-  // 🖼️ Fotos ocupando metade direita
-  photosGridRight(doc, apto.fotos, rightX, 18, rightW);
 
-  // 📋 Tabelas ocupando metade esquerda
-  let y = tableComodos(doc, apto.comodos, 36, leftW);
-  y = tableQuadro(doc, apto.quadro, y + 6, leftW);
-  y = tableEspecificacoes(doc, apto.especificacoes, y + 6, leftW);
+  // fotos à direita
+  photosGridRight(doc, unidade.fotos, rightX, 18, rightW);
+
+  // tabelas à esquerda
+  let y = tableComodos(doc, unidade.comodos, 36, leftW);
+  y = tableQuadro(doc, unidade.quadro, y + 6, leftW);
+  y = tableEspecificacoes(doc, unidade.especificacoes, y + 6, leftW);
   const obsY = Math.max(y + 8, 150);
-  observacoesBox2Cols(doc, apto, obsY);
+  observacoesBox2Cols(doc, unidade, obsY);
 }
 
 /** ----------------- API pública ----------------- */
@@ -741,37 +742,47 @@ export const generateCondominioPDF = async (
   const doc = new jsPDF({ unit: "mm", format: "a4", orientation: "landscape" });
 
   try {
-    // carrega logo (se falhar, segue sem logo)
     const logo = await loadPublicLogo();
 
     // páginas institucionais
     addCoverPage(doc, cond, logo);
-    addIndexPage(doc, logo);
+    addIndexPage(doc, cond, logo);
     addObjetivoPage(doc, cond, logo);
     addNormasPage(doc, logo);
     addMetodologiaPage(doc, logo);
-    addCasasSelecionadasPage(doc, cond, logo);
+    addUnidadesSelecionadasPage(doc, cond, logo);
 
-    // páginas por apartamento
-    const blocosOrdenados = cond.blocos
-      .slice()
-      .sort((a, b) => a.id.localeCompare(b.id, "pt-BR", { numeric: true }));
-
-    for (const bloco of blocosOrdenados) {
-      const aptosOrdenados = bloco.apartamentos
+    // páginas por unidade (apto/casa)
+    if (cond.tipo === "CASAS") {
+      const casas = (cond.casas ?? [])
+        .slice()
+        .sort((a, b) => a.id.localeCompare(b.id, "pt-BR", { numeric: true }));
+      for (const casa of casas) {
+        try {
+          unitChecklistPage(doc, cond, casa, logo, "Casa");
+        } catch (e) {
+          console.error(`Falha ao montar página da casa ${casa.id}:`, e);
+        }
+      }
+    } else {
+      const blocosOrdenados = cond.blocos
         .slice()
         .sort((a, b) => a.id.localeCompare(b.id, "pt-BR", { numeric: true }));
 
-      for (const apto of aptosOrdenados) {
-        try {
-          apartmentChecklistPage(doc, cond, bloco, apto, logo);
-        } catch (e) {
-          // não interrompe o laudo inteiro se um apê falhar
-          // eslint-disable-next-line no-console
-          console.error(
-            `Falha ao montar página do apto ${apto.id} do bloco ${bloco.id}:`,
-            e
-          );
+      for (const bloco of blocosOrdenados) {
+        const aptosOrdenados = bloco.apartamentos
+          .slice()
+          .sort((a, b) => a.id.localeCompare(b.id, "pt-BR", { numeric: true }));
+
+        for (const apto of aptosOrdenados) {
+          try {
+            unitChecklistPage(doc, cond, apto, logo, "Apartamento", bloco.id);
+          } catch (e) {
+            console.error(
+              `Falha ao montar página do apto ${apto.id} do bloco ${bloco.id}:`,
+              e
+            );
+          }
         }
       }
     }
@@ -783,7 +794,6 @@ export const generateCondominioPDF = async (
     const todayIso = new Date().toISOString().slice(0, 10);
     doc.save(`${sanitizeFileName(cond.nome)}_${todayIso}.pdf`);
   } catch (err) {
-    // repassa para o botão tratar (exibe alerta)
     throw err instanceof Error ? err : new Error(String(err));
   }
 };

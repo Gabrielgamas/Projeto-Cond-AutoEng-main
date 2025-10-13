@@ -15,8 +15,6 @@ export type QuadroDistribuicao = {
   Circuitos: boolean;
   Identificação: boolean;
   "Tensão e Corrente": boolean;
-  "Seção Condutor": boolean; // <-- ADICIONE
-  "Tensão Nominal": boolean;
 };
 
 export type Especificacao = {
@@ -46,13 +44,17 @@ export type Bloco = {
   apartamentos: Apartamento[];
 };
 
+export type CondominioTipo = "BLOCOS" | "CASAS";
+
 export type Condominio = {
   id: string;
   nome: string;
-  blocos: Bloco[];
+  tipo: CondominioTipo;
+  blocos: Bloco[]; // usado quando tipo === "BLOCOS"
+  casas?: Apartamento[]; // usado quando tipo === "CASAS"
 };
 
 export type AppState = {
+  schemaVersion: number; // 2+
   condominios: Condominio[];
-  schemaVersion: number;
 };

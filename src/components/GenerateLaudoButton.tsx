@@ -1,56 +1,35 @@
-import { useState } from "react";
+// src/components/GenerateLaudoButton.tsx
 import { generateCondominioPDF } from "../utils/pdf";
 import type { Condominio } from "../types";
 
-type Props = { condominio: Condominio; className?: string };
+type Props = Readonly<{
+  condominio: Condominio;
+  className?: string;
+}>;
 
 export default function GenerateLaudoButton({ condominio, className }: Props) {
-  const [loading, setLoading] = useState(false);
-
-  const handleClick = async () => {
+  async function handleClick() {
     try {
-      if (!condominio?.blocos?.length) {
-        alert(
-          "Adicione pelo menos 1 bloco com 1 apartamento para gerar o laudo."
-        );
-        return;
-      }
-      const hasApto = condominio.blocos.some((b) => b.apartamentos?.length);
-      if (!hasApto) {
-        alert("Adicione pelo menos 1 apartamento para gerar o laudo.");
-        return;
-      }
-
-      setLoading(true);
-      await generateCondominioPDF(condominio);
-    } catch (err) {
-      // loga tudo com mais contexto
-      // eslint-disable-next-line no-console
-      console.error("Erro ao gerar PDF:", err);
+      await generateCondominioPDF(condominio); // ✅ apenas 1 argumento
+    } catch (e) {
       const msg =
-        err instanceof Error
-          ? err.message
-          : typeof err === "string"
-          ? err
-          : JSON.stringify(err);
-      alert("Falha ao gerar o PDF. Veja o console para detalhes.\n\n" + msg);
-    } finally {
-      setLoading(false);
+        e instanceof Error ? e.message : "Erro inesperado ao gerar o laudo.";
+      // use o tratamento que preferir (toast/alert/etc)
+      alert(msg);
+      // console opcional para depuração:
+      // console.error(e);
     }
-  };
+  }
 
   return (
     <button
-      type="button"
       onClick={handleClick}
-      disabled={loading}
-      className={
-        className ??
-        "px-4 py-2 rounded-xl bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-60"
-      }
-      aria-busy={loading}
+      className={`px-4 py-2 rounded-lg bg-blue-600 text-white ${
+        className ?? ""
+      }`}
+      title="Gerar laudo do condomínio"
     >
-      {loading ? "Gerando..." : "Gerar laudo"}
+      Gerar laudo
     </button>
   );
 }
