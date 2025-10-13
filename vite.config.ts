@@ -7,25 +7,58 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: "autoUpdate",
-      includeAssets: ["favicon.svg"],
+      includeAssets: [
+        "favicon.ico",
+        "apple-touch-icon.png",
+        "masked-icon.svg",
+        "logo.png",
+      ],
       manifest: {
-        name: "Inspeção Condominial",
-        short_name: "Inspeção",
-        description: "Aplicativo PWA de inspeção elétrica em condomínios",
-        theme_color: "#2563eb",
-        background_color: "#f3f4f6",
-        display: "standalone",
+        name: "AutoEng",
+        short_name: "AutoEng",
         start_url: "/",
+        scope: "/",
+        display: "standalone",
+        background_color: "#ffffff",
+        theme_color: "#14233C",
         icons: [
+          { src: "icons/pwa-192.png", sizes: "192x192", type: "image/png" },
+          { src: "icons/pwa-512.png", sizes: "512x512", type: "image/png" },
           {
-            src: "pwa-192x192.png",
-            sizes: "192x192",
-            type: "image/png",
-          },
-          {
-            src: "pwa-512x512.png",
+            src: "icons/maskable-512.png",
             sizes: "512x512",
             type: "image/png",
+            purpose: "any maskable",
+          },
+        ],
+      },
+      devOptions: {
+        enabled: true, // permite PWA no npm run dev
+        // navigateFallback: 'index.html' // opcional
+      },
+      workbox: {
+        globPatterns: ["**/*.{js,css,html,ico,png,svg}"],
+        runtimeCaching: [
+          {
+            urlPattern: ({ request }) => request.mode === "navigate",
+            handler: "NetworkFirst",
+            options: { cacheName: "html-cache", networkTimeoutSeconds: 3 },
+          },
+          {
+            urlPattern: ({ request }) => request.destination === "image",
+            handler: "CacheFirst",
+            options: {
+              cacheName: "image-cache",
+              expiration: { maxEntries: 100, maxAgeSeconds: 60 * 60 * 24 * 30 },
+            },
+          },
+          {
+            urlPattern: /\/logo\.png$/,
+            handler: "CacheFirst",
+            options: {
+              cacheName: "logo-cache",
+              expiration: { maxEntries: 1, maxAgeSeconds: 60 * 60 * 24 * 365 },
+            },
           },
         ],
       },
