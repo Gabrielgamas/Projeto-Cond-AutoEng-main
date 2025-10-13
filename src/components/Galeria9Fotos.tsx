@@ -94,7 +94,7 @@ export default function Galeria9Fotos({ value, onChange }: Props) {
       </div>
 
       {/* grade de 9 fotos */}
-      <div className="grid grid-cols-3 gap-2">
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
         {fotos.map((f, i) => (
           <button
             key={i}

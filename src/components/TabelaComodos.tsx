@@ -30,7 +30,7 @@ export default function TabelaComodos({ value, onChange }: Props) {
   }
 
   return (
-    <div className="overflow-x-auto">
+    <div className="overflow-x-auto rounded-lg border">
       <table className="w-full text-sm border-collapse">
         <thead>
           <tr>

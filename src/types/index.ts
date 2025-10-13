@@ -15,6 +15,8 @@ export type QuadroDistribuicao = {
   Circuitos: boolean;
   Identificação: boolean;
   "Tensão e Corrente": boolean;
+  "Seção Condutor": boolean; // <-- ADICIONE
+  "Tensão Nominal": boolean;
 };
 
 export type Especificacao = {
