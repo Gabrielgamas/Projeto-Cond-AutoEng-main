@@ -111,6 +111,22 @@ export default function Galeria9Fotos({ value, onChange }: Props) {
                 {i + 1}/9
               </div>
             )}
+
+            {/* Botão de remover no canto superior direito */}
+            {f && (
+              <button
+                type="button"
+                className="absolute top-2 right-2 px-2 py-1 text-xs rounded bg-white/90 shadow hover:bg-white opacity-0 group-hover:opacity-100 transition"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  const next = [...fotos];
+                  next[i] = "";
+                  onChange(next);
+                }}
+              >
+                Remover
+              </button>
+            )}
           </button>
         ))}
       </div>
