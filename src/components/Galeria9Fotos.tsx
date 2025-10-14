@@ -1,144 +1,152 @@
-import { useRef } from "react";
+import React, { useRef } from "react";
+import { normalizeImageFile } from "../utils/images";
 
-type Props = Readonly<{
-  value: string[]; // 9 elementos (dataURL ou "")
-  onChange: (next: string[]) => void;
-}>;
+type Props = {
+  /** Você pode passar value OU fotos (são equivalentes) */
+  value?: string[];
+  fotos?: string[];
+  onChange: (v: string[]) => void;
 
-export default function Galeria9Fotos({ value, onChange }: Props) {
-  const inputRef = useRef<HTMLInputElement>(null);
-  const bulkInputRef = useRef<HTMLInputElement>(null);
-  const tmpSlot = useRef<number>(-1);
+  maxWidth?: number; // default 1280
+  quality?: number; // default 0.82
+};
 
-  const fotos = value.length === 9 ? value : Array(9).fill("");
+export default function Galeria9Fotos({
+  value,
+  fotos: fotosProp,
+  onChange,
+  maxWidth = 1280,
+  quality = 0.82,
+}: Props) {
+  // aceita value ou fotos; se nenhum vier, preenche 9 vazios
+  const fotos = (value ?? fotosProp ?? Array(9).fill("")) as string[];
 
-  // === Foto individual ===
-  async function handlePick(slot: number) {
-    tmpSlot.current = slot;
-    inputRef.current?.click();
-  }
+  const inputRef = useRef<HTMLInputElement | null>(null);
 
-  async function onFile(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    e.target.value = ""; // permite re-selecionar mesma foto
-    if (!file) return;
-
-    const dataUrl = await fileToDataURL(file);
-    const idx = tmpSlot.current;
+  const setFoto = (idx: number, dataUrl: string) => {
     const next = [...fotos];
     next[idx] = dataUrl;
     onChange(next);
-  }
+  };
 
-  // === Adicionar várias de uma vez ===
-  async function handleBulkPick() {
-    bulkInputRef.current?.click();
-  }
-
-  async function handleBulkFiles(files: FileList | null) {
-    if (!files || files.length === 0) return;
-    const arr = Array.from(files).slice(0, 9);
-    const dataUrls = await Promise.all(arr.map(fileToDataURL));
-
+  const clearFoto = (idx: number) => {
     const next = [...fotos];
-    let slot = 0;
-    for (const url of dataUrls) {
-      // preenche slots vazios primeiro
-      let idx = next.findIndex((v, i) => v === "" && i >= slot);
-      if (idx === -1) idx = slot;
-      next[idx] = url;
-      slot = idx + 1;
-      if (slot >= 9) slot = 0;
-    }
+    next[idx] = "";
     onChange(next);
-    if (bulkInputRef.current) bulkInputRef.current.value = "";
+  };
+
+  async function handleSingleSelect(idx: number, file?: File) {
+    if (!file) return;
+    try {
+      const optimized = await normalizeImageFile(file, maxWidth, quality);
+      setFoto(idx, optimized);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Falha ao processar imagem.");
+    } finally {
+      if (inputRef.current) inputRef.current.value = "";
+    }
   }
 
-  const completos = fotos.filter(Boolean).length;
-  const valido = completos === 9;
+  // multi-upload: preenche slots vazios
+  async function handleMultiSelect(files: FileList | null) {
+    if (!files || files.length === 0) return;
+    try {
+      const emptyIdxs = fotos
+        .map((v, i) => (v ? -1 : i))
+        .filter((i) => i >= 0)
+        .slice(0, files.length);
+
+      const next = [...fotos];
+      for (let j = 0; j < emptyIdxs.length; j++) {
+        const idx = emptyIdxs[j];
+        const file = files[j];
+        if (!file) break;
+        const optimized = await normalizeImageFile(file, maxWidth, quality);
+        next[idx] = optimized;
+      }
+      onChange(next);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Falha ao processar imagens.");
+    } finally {
+      if (inputRef.current) inputRef.current.value = "";
+    }
+  }
 
   return (
     <div className="space-y-2">
-      {/* input individual */}
-      <input
-        ref={inputRef}
-        type="file"
-        accept="image/*"
-        hidden
-        onChange={onFile}
-      />
-
-      {/* input múltiplo */}
-      <input
-        ref={bulkInputRef}
-        type="file"
-        accept="image/*"
-        multiple
-        hidden
-        onChange={(e) => handleBulkFiles(e.target.files)}
-      />
-
-      {!valido && (
-        <div className="text-sm text-red-700 bg-red-50 border border-red-200 rounded p-2">
-          Adicione exatamente 9 fotos (faltam {9 - completos}).
-        </div>
-      )}
-
-      <div className="flex justify-end mb-2">
-        <button
-          onClick={handleBulkPick}
-          className="px-3 py-1.5 rounded-lg border hover:bg-gray-50 text-sm"
-        >
-          Adicionar 9 fotos de uma vez
-        </button>
+      {/* multi-upload */}
+      <div className="flex items-center gap-2">
+        <label className="px-3 py-2 border rounded-lg cursor-pointer">
+          Adicionar várias fotos
+          <input
+            ref={inputRef}
+            type="file"
+            accept="image/*"
+            multiple
+            className="hidden"
+            onChange={(e) => handleMultiSelect(e.target.files)}
+          />
+        </label>
+        <span className="text-sm text-gray-500">
+          Espaços livres: {fotos.filter((f) => !f).length}/9
+        </span>
       </div>
 
-      {/* grade de 9 fotos */}
+      {/* grade 3x3 */}
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-        {fotos.map((f, i) => (
-          <button
+        {Array.from({ length: 9 }, (_, i) => (
+          <FotoItem
             key={i}
-            type="button"
-            onClick={() => handlePick(i)}
-            className="aspect-square rounded-lg border overflow-hidden relative bg-gray-50 group"
-            title={f ? "Trocar foto" : "Adicionar foto"}
-            aria-label={f ? `Trocar foto ${i + 1}` : `Adicionar foto ${i + 1}`}
-          >
-            {f ? (
-              <img src={f} className="w-full h-full object-cover" />
-            ) : (
-              <div className="w-full h-full flex items-center justify-center text-gray-400 text-sm">
-                {i + 1}/9
-              </div>
-            )}
-
-            {/* Botão de remover no canto superior direito */}
-            {f && (
-              <button
-                type="button"
-                className="absolute top-2 right-2 px-2 py-1 text-xs rounded bg-white/90 shadow hover:bg-white opacity-0 group-hover:opacity-100 transition"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  const next = [...fotos];
-                  next[i] = "";
-                  onChange(next);
-                }}
-              >
-                Remover
-              </button>
-            )}
-          </button>
+            idx={i}
+            src={fotos[i]}
+            onPick={(file) => handleSingleSelect(i, file)}
+            onRemove={() => clearFoto(i)}
+          />
         ))}
       </div>
     </div>
   );
 }
 
-function fileToDataURL(file: File): Promise<string> {
-  return new Promise((res, rej) => {
-    const reader = new FileReader();
-    reader.onload = () => res(String(reader.result));
-    reader.onerror = rej;
-    reader.readAsDataURL(file);
-  });
+function FotoItem({
+  idx,
+  src,
+  onPick,
+  onRemove,
+}: {
+  idx: number;
+  src: string;
+  onPick: (file?: File) => void;
+  onRemove: () => void;
+}) {
+  const inputRef = React.useRef<HTMLInputElement | null>(null);
+  const handleClick = () => inputRef.current?.click();
+
+  return (
+    <div
+      className="relative aspect-[4/3] border rounded-md overflow-hidden cursor-pointer group"
+      onClick={handleClick}
+      title={src ? "Trocar foto" : "Adicionar foto"}
+    >
+      {src ? (
+        <img
+          src={src}
+          alt={`Foto ${idx + 1}`}
+          className="w-full h-full object-cover"
+        />
+      ) : (
+        <div className="w-full h-full flex items-center justify-center text-sm text-gray-500">
+          {`Foto ${idx + 1}`}
+        </div>
+      )}
+
+      <input
+        ref={inputRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={(e) => onPick(e.target.files?.[0])}
+      />
+    </div>
+  );
 }
