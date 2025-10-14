@@ -1,5 +1,6 @@
 import React, { useRef } from "react";
 import { normalizeImageFile } from "../utils/images";
+import { canStoreBytes, approxBytesFromDataUrl } from "../utils/storage";
 
 type Props = {
   /** Você pode passar value OU fotos (são equivalentes) */
@@ -39,6 +40,15 @@ export default function Galeria9Fotos({
     if (!file) return;
     try {
       const optimized = await normalizeImageFile(file, maxWidth, quality);
+
+      const ok = await canStoreBytes(approxBytesFromDataUrl(optimized));
+      if (!ok) {
+        alert(
+          "Espaço insuficiente para salvar esta foto. Exporte seus dados ou apague algumas fotos."
+        );
+        return;
+      }
+
       setFoto(idx, optimized);
     } catch (e) {
       alert(e instanceof Error ? e.message : "Falha ao processar imagem.");
@@ -48,6 +58,7 @@ export default function Galeria9Fotos({
   }
 
   // multi-upload: preenche slots vazios
+
   async function handleMultiSelect(files: FileList | null) {
     if (!files || files.length === 0) return;
     try {
@@ -62,6 +73,17 @@ export default function Galeria9Fotos({
         const file = files[j];
         if (!file) break;
         const optimized = await normalizeImageFile(file, maxWidth, quality);
+
+        const ok = await canStoreBytes(approxBytesFromDataUrl(optimized));
+        if (!ok) {
+          alert(
+            `Sem espaço para salvar a foto ${
+              j + 1
+            }. Dica: exporte seus dados e libere espaço.`
+          );
+          break;
+        }
+
         next[idx] = optimized;
       }
       onChange(next);
