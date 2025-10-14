@@ -4,6 +4,7 @@ import ConfirmDeleteDialog from "../components/ConfirmDeleteDialog";
 import { useAppState } from "../state/AppStateContext";
 import type { CondominioTipo } from "../types";
 import { exportData, importDataFromFile } from "../utils/backup";
+import BackupControls from "../components/BackupControls";
 
 export default function Home() {
   const { data, loading, addCondominio, removeCondominio } = useAppState();
@@ -79,26 +80,7 @@ export default function Home() {
           >
             Adicionar
           </button>
-          <button
-            onClick={() => exportData()}
-            className="px-3 py-2 rounded-lg hover:border cursor-pointer bg-green-500 hover:bg-gray-50"
-            title="Baixar um arquivo .json com todos os dados"
-          >
-            Exportar dados
-          </button>
-
-          <label className="text-center text-white px-3 py-2 cursor-pointer bg-green-800 rounded-lg hover:border hover:bg-gray-50 cursor-pointer hover:text-black">
-            Importar
-            <input
-              type="file"
-              accept="application/json"
-              className="hidden"
-              onChange={(e) => {
-                const f = e.target.files?.[0];
-                if (f) importDataFromFile(f);
-              }}
-            />
-          </label>
+          <BackupControls />
         </div>
 
         {/* lista */}
