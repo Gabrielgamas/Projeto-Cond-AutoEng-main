@@ -3,7 +3,6 @@ import { Link } from "react-router-dom";
 import ConfirmDeleteDialog from "../components/ConfirmDeleteDialog";
 import { useAppState } from "../state/AppStateContext";
 import type { CondominioTipo } from "../types";
-import { exportData, importDataFromFile } from "../utils/backup";
 import BackupControls from "../components/BackupControls";
 
 export default function Home() {
