@@ -130,20 +130,16 @@ export default function Galeria9Fotos({
   );
 }
 
-function FotoItem({
-  idx,
-  src,
-  onPick,
-  onRemove,
-}: {
+type FotoItemProps = {
   idx: number;
   src: string;
   onPick: (file?: File) => void;
-  onRemove: () => void;
-}) {
+  onRemove?: () => void; // ← deixa opcional, mas não vamos destruturar
+};
+
+function FotoItem({ idx, src, onPick }: FotoItemProps) {
   const inputRef = React.useRef<HTMLInputElement | null>(null);
   const handleClick = () => inputRef.current?.click();
-
   return (
     <div
       className="relative aspect-[4/3] border rounded-md overflow-hidden cursor-pointer group"
