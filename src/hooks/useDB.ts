@@ -40,7 +40,12 @@ export function useDB() {
   // Helpers CRUD (condomínio / bloco / apartamento)
   const api = useMemo(() => {
     function addCondominio(nome: string) {
-      const novo: Condominio = { id: crypto.randomUUID(), nome, blocos: [] };
+      const novo: Condominio = {
+        id: crypto.randomUUID(),
+        nome,
+        tipo: "BLOCOS", // ✅ adicione isto
+        blocos: [],
+      };
       setData((prev) => ({
         ...prev,
         condominios: [...prev.condominios, novo],

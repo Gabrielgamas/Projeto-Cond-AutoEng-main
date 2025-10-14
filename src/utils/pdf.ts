@@ -379,7 +379,7 @@ function drawCross(doc: jsPDF, x: number, y: number, w: number, h: number) {
 function tableComodos(
   doc: jsPDF,
   comodos: TabelaComodos,
-  startY: number,
+  _startY: number,
   width: number
 ) {
   const COLS: (keyof ChecklistComodo)[] = [
@@ -650,7 +650,7 @@ function observacoesBox2Cols(
 /** ----------------- Página por unidade (apto/casa) ----------------- */
 function unitChecklistPage(
   doc: jsPDF,
-  cond: Condominio,
+  _cond: Condominio,
   unidade: Apartamento,
   logo: string | undefined,
   label: "Apartamento" | "Casa",
@@ -719,7 +719,6 @@ function unitChecklistPage(
   const usableWidth = PW - 2 * MARGIN;
   const halfWidth = usableWidth / 2 - 3;
   const leftW = halfWidth;
-  const leftX = MARGIN;
   const rightX = MARGIN + halfWidth + 6;
   const rightW = halfWidth;
 
