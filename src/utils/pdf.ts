@@ -22,6 +22,7 @@ declare module "jspdf" {
 const PW = 297; // width (mm)
 const PH = 210; // height (mm)
 const MARGIN = 12;
+const SITUACAO_COL_W = 28;
 
 type RGB = [number, number, number];
 const NAVY: RGB = [20, 35, 60]; // #14233C
@@ -444,10 +445,15 @@ function tableQuadro(
     body,
     margin: { left: MARGIN, right: PW - (MARGIN + width) },
     tableWidth: width,
+
+    // ➜ mesma largura sempre para a coluna “Situação”
+    columnStyles: {
+      0: { cellWidth: width - SITUACAO_COL_W },
+      1: { cellWidth: SITUACAO_COL_W, halign: "center" as const },
+    },
+
     didParseCell: (data: CellHookData) => {
-      if (data.section === "body" && data.column.index > 0) {
-        data.cell.text = [];
-      }
+      if (data.section === "body" && data.column.index > 0) data.cell.text = [];
     },
     didDrawCell: (data: CellHookData) => {
       const { cell, column, row } = data;
@@ -482,10 +488,15 @@ function tableEspecificacoes(
     body,
     margin: { left: MARGIN, right: PW - (MARGIN + width) },
     tableWidth: width,
+
+    // ➜ usa o MESMO valor da função acima
+    columnStyles: {
+      0: { cellWidth: width - SITUACAO_COL_W },
+      1: { cellWidth: SITUACAO_COL_W, halign: "center" as const },
+    },
+
     didParseCell: (data: CellHookData) => {
-      if (data.section === "body" && data.column.index > 0) {
-        data.cell.text = [];
-      }
+      if (data.section === "body" && data.column.index > 0) data.cell.text = [];
     },
     didDrawCell: (data: CellHookData) => {
       const { cell, column, row } = data;
@@ -520,7 +531,7 @@ function photosGridRight(
 
   const cols = 3;
   const gap = 2.2;
-  const top = areaY + 10;
+  const top = areaY + 20;
   const cellW = (areaW - gap * (cols - 1)) / cols;
   const cellH = cellW * 0.75;
 
@@ -567,76 +578,98 @@ function photosGridRight(
   }
 }
 
-/** ----------------- Observações (lista) ----------------- */
+/** ----------------- Observações (duas colunas, com checkbox centralizado) ----------------- */
 function observacoesBox2Cols(
   doc: jsPDF,
   apto: Apartamento,
   startY: number
 ): number {
-  const titleH = 8;
+  // ====== ajustes rápidos ======
+  const TITLE_H = 8; // altura da tarja azul "Observações"
+  const COL_GAP = 0; // gap entre colunas
+  const LINE_H = 10; // altura por item
+  const BOX_SIZE = 4; // tamanho do "checkbox"
+  const BOX_LEFT_PAD = 6; // distância da borda até o checkbox
+  const TEXT_GAP = 3; // espaço entre checkbox e texto
+  const FONT_SIZE = 10; // mesmo tamanho usado no texto
+  const BASELINE_ADJ = 1.5; // ajuste fino p/ centralizar (3.0–4.0 com fs=10)
+  // =============================
+
   const totalW = PW - 2 * MARGIN;
-  const colGap = 0;
-  const colW = (totalW - colGap) / 2;
+  const colW = (totalW - COL_GAP) / 2;
 
-  const availH = PH - MARGIN - startY;
-  const contentH = Math.max(20, availH - titleH);
-
+  // título
   doc.setFillColor(...NAVY);
-  doc.rect(MARGIN, startY, totalW, titleH, "F");
+  doc.rect(MARGIN, startY, totalW, TITLE_H, "F");
   doc.setTextColor(255, 255, 255);
   doc.setFont("helvetica", "bold");
   doc.setFontSize(12);
   doc.text("Observações", MARGIN + 4, startY + 5.8);
   doc.setTextColor(0, 0, 0);
 
-  const yTop = startY + titleH;
-  const lineH = 10;
+  const yTop = startY + TITLE_H;
 
-  const linesPerCol = Math.max(1, Math.floor((contentH - 6) / lineH));
+  // área disponível nesta página
+  const availH = PH - MARGIN - yTop;
+  const contentH = Math.max(20, availH);
 
-  const erros = apto.erros ?? [];
+  // molduras
   doc.setDrawColor(0);
   doc.rect(MARGIN, yTop, colW, contentH);
-  doc.rect(MARGIN + colW + colGap, yTop, colW, contentH);
+  doc.rect(MARGIN + colW + COL_GAP, yTop, colW, contentH);
 
+  // capacidade desta página
+  const linesPerCol = Math.max(1, Math.floor((contentH - 6) / LINE_H));
+  const erros = apto.erros ?? [];
   const capThisPage = linesPerCol * 2;
+
   const pageItems = erros.slice(0, capThisPage);
   const restItems = erros.slice(capThisPage);
 
-  const writeCol = (items: typeof erros, x: number, startIndex: number) => {
+  // desenha itens de uma coluna (sem numeração; com checkbox)
+  const drawItems = (items: typeof erros, x: number) => {
     let y = yTop + 7;
     for (let i = 0; i < items.length; i++) {
       const e = items[i];
-      const idx = startIndex + i + 1;
-      const txt = e
-        ? [
-            `${idx}. ${e.descricao}`,
-            e.comodo ? ` — ${e.comodo}` : "",
-            e.item ? ` (${e.item})` : "",
-          ].join("")
-        : "";
+      if (!e) continue;
 
+      const txt = [
+        e.descricao || "",
+        e.comodo ? ` — ${e.comodo}` : "",
+        e.item ? ` (${e.item})` : "",
+      ].join("");
+
+      // checkbox centralizado na vertical em relação à linha do texto
+      const boxTop = y - BASELINE_ADJ - BOX_SIZE / 2;
+      doc.setDrawColor(90);
+      doc.rect(x + BOX_LEFT_PAD, boxTop, BOX_SIZE, BOX_SIZE);
+
+      // texto
       doc.setFont("helvetica", "normal");
-      doc.setFontSize(10);
-      const wrapped = doc.splitTextToSize(txt, colW - 8);
-      doc.text(wrapped, x + 4, y);
+      doc.setFontSize(FONT_SIZE);
+      const textX = x + BOX_LEFT_PAD + BOX_SIZE + TEXT_GAP;
+      const wrapped = doc.splitTextToSize(txt, colW - (textX - x) - 4);
+      doc.text(wrapped, textX, y);
 
+      // linha guia (opcional)
       doc.setDrawColor(200);
       doc.line(x, y + 2.8, x + colW, y + 2.8);
 
-      y += lineH;
+      y += LINE_H;
       if (y > yTop + contentH - 4) break;
     }
   };
 
-  writeCol(
+  // esquerda
+  drawItems(
     pageItems.slice(0, Math.min(linesPerCol, pageItems.length)),
-    MARGIN,
-    0
+    MARGIN
   );
+  // direita
   const rightSlice = pageItems.slice(linesPerCol);
-  writeCol(rightSlice, MARGIN + colW + colGap, linesPerCol);
+  drawItems(rightSlice, MARGIN + colW + COL_GAP);
 
+  // paginação se sobrar itens
   if (restItems.length > 0) {
     doc.addPage("a4", "landscape");
     doc.setFillColor(...NAVY);
