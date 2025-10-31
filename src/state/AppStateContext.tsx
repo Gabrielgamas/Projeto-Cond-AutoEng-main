@@ -1,279 +1,402 @@
-import { createContext, useContext, useEffect, useMemo, useState } from "react";
-import { get, set } from "idb-keyval";
+import React, {
+  createContext,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 import type {
-  AppState,
   Condominio,
   Bloco,
   Apartamento,
+  ChecklistComodo,
+  TabelaComodos,
+  QuadroDistribuicao,
+  Especificacao,
   CondominioTipo,
 } from "../types";
 
+/* ============================= Persistência ============================= */
+
 const STORAGE_KEY = "autoeng-data";
+
+type AppState = {
+  schemaVersion: number;
+  condominios: Condominio[];
+};
+
+function loadState(): AppState {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) return JSON.parse(raw) as AppState;
+  } catch {
+    /* ignore */
+  }
+  return { schemaVersion: 2, condominios: [] };
+}
+
+function saveState(s: AppState) {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(s));
+}
+
+/* ============================ Helpers gerais ============================ */
+
+// normaliza textos para comparação (case-insensitive, sem acentos e espaços extras)
+const norm = (s: string) =>
+  s
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, " ");
+
+type OpResult = { ok: true } | { ok: false; error: string };
+
+/* ====================== Fábricas de objetos (tipadas) ==================== */
+
+function createChecklistComodoAllTrue(): ChecklistComodo {
+  return {
+    "Tugs e Tues": true,
+    Iluminação: true,
+    Acabamento: true,
+    "Tensão e Corrente": true,
+  };
+}
+
+function createComodosDefault(): TabelaComodos {
+  return {
+    Sala: createChecklistComodoAllTrue(),
+    Cozinha: createChecklistComodoAllTrue(),
+    Quartos: createChecklistComodoAllTrue(),
+    Banheiro: createChecklistComodoAllTrue(),
+    "Área de Serv.": createChecklistComodoAllTrue(),
+    Varanda: createChecklistComodoAllTrue(),
+  };
+}
+
+function createQuadroDefault(): QuadroDistribuicao {
+  return {
+    Acabamento: true,
+    Circuitos: true,
+    Identificação: true,
+    "Tensão e Corrente": true,
+  };
+}
+
+function createEspecificacoesDefault(): Especificacao {
+  return {
+    Campainha: true,
+    Chuveiro: true,
+  };
+}
+
+function createUnidadeDefault(id: string): Apartamento {
+  return {
+    id,
+    comodos: createComodosDefault(),
+    quadro: createQuadroDefault(),
+    especificacoes: createEspecificacoesDefault(),
+    erros: [],
+    fotos: Array<string>(9).fill(""),
+  };
+}
+
+/* =============================== Contexto =============================== */
 
 type Ctx = {
   data: AppState;
-  loading: boolean;
-  saveData: (next: AppState) => Promise<void>;
-  // condomínio
-  addCondominio: (nome: string, tipo: CondominioTipo) => void;
-  removeCondominio: (id: string) => void;
-  // blocos/apartamentos
-  addBloco: (condId: string, idBloco: string) => void;
+  setData: React.Dispatch<React.SetStateAction<AppState>>;
+
+  addCondominio: (nome: string, tipo: CondominioTipo) => OpResult;
+  removeCondominio: (condId: string) => void;
+
+  addBloco: (condId: string, idBloco: string) => OpResult;
   removeBloco: (condId: string, blocoId: string) => void;
-  addApartamento: (condId: string, blocoId: string, idApto: string) => void;
-  removeApartamento: (condId: string, blocoId: string, aptoId: string) => void;
+
+  addApartamento: (condId: string, blocoId: string, idApto: string) => OpResult;
+  removeApartamento: (condId: string, blocoId: string, idApto: string) => void;
+
+  addCasa: (condId: string, idCasa: string) => OpResult;
+  removeCasa: (condId: string, idCasa: string) => void;
+
+  /** atualiza (ou insere) um apartamento existente */
   upsertApartamento: (
     condId: string,
     blocoId: string,
     apto: Apartamento
   ) => void;
-  // casas (sem bloco)
-  addCasa: (condId: string, idCasa: string) => void;
-  removeCasa: (condId: string, idCasa: string) => void;
-  upsertCasa: (condId: string, casa: Apartamento) => void;
+  /** atualiza (ou insere) uma casa existente */
+  upsertCasa: (condId: string, apto: Apartamento) => void;
+
+  saveData: (d: AppState) => void;
 };
-// eslint-disable-next-line react-refresh/only-export-components
-export const AppStateContext = createContext<Ctx | null>(null);
+
+const AppStateContext = createContext<Ctx | null>(null);
 
 export function AppStateProvider({ children }: { children: React.ReactNode }) {
-  const [data, setData] = useState<AppState>({
-    schemaVersion: 2,
-    condominios: [],
-  });
-  const [loading, setLoading] = useState(true);
+  const [data, setData] = useState<AppState>(() => loadState());
 
-  type CondominioV1 = {
-    id: string;
-    nome: string;
-    blocos: Bloco[];
-  };
-
-  type AppStateV1 = {
-    schemaVersion: 1;
-    condominios: CondominioV1[];
-  };
-
-  // migração p/ schema v2 (adiciona tipo e casas opcional)
   useEffect(() => {
-    (async () => {
-      try {
-        const stored = await get<AppState | AppStateV1 | undefined>(
-          STORAGE_KEY
-        );
-        if (!stored) return;
+    saveState(data);
+  }, [data]);
 
-        // dados já no schema novo
-        if ("schemaVersion" in stored && stored.schemaVersion >= 2) {
-          setData(stored as AppState);
-          return;
-        }
+  const saveData = (d: AppState) => {
+    setData(d);
+    saveState(d);
+  };
 
-        // v1 -> v2 (sem any)
-        const v1 = stored as AppStateV1;
-        const migrated: AppState = {
-          schemaVersion: 2,
-          condominios: v1.condominios.map(
-            (c): Condominio => ({
-              ...c,
-              tipo: "BLOCOS",
-              casas: [],
-            })
-          ),
-        };
+  /* ===================== Ações com validação de duplicados ===================== */
 
-        setData(migrated);
-        await set(STORAGE_KEY, migrated);
-      } finally {
-        setLoading(false);
+  function addCondominio(nomeRaw: string, tipo: CondominioTipo): OpResult {
+    const nome = nomeRaw.trim();
+    if (!nome) return { ok: false, error: "Informe o nome do condomínio." };
+
+    const key = norm(nome);
+    let inserted = false;
+    let duplicated = false;
+
+    setData((prev) => {
+      // checa no estado mais recente (prev)
+      if (prev.condominios.some((c) => norm(c.nome) === key)) {
+        duplicated = true;
+        return prev;
       }
-    })().catch(() => setLoading(false));
-  }, []);
+      const d = structuredClone(prev);
+      d.condominios.push({
+        id: crypto.randomUUID(),
+        nome,
+        tipo,
+        blocos: [],
+        casas: [], // sua estrutura já usa 'casas'; mantemos aqui
+      });
+      saveState(d);
+      inserted = true;
+      return d;
+    });
 
-  useEffect(() => {
-    if (loading) setLoading(false);
-  }, [loading]);
-
-  const saveData = async (next: AppState) => {
-    setData(next);
-    await set(STORAGE_KEY, next);
-  };
-
-  // helpers
-  function newUnit(id: string): Apartamento {
-    return {
-      id,
-      comodos: {
-        Sala: {
-          "Tugs e Tues": true,
-          Iluminação: true,
-          Acabamento: true,
-          "Tensão e Corrente": true,
-        },
-        Cozinha: {
-          "Tugs e Tues": true,
-          Iluminação: true,
-          Acabamento: true,
-          "Tensão e Corrente": true,
-        },
-        Quartos: {
-          "Tugs e Tues": true,
-          Iluminação: true,
-          Acabamento: true,
-          "Tensão e Corrente": true,
-        },
-        Banheiro: {
-          "Tugs e Tues": true,
-          Iluminação: true,
-          Acabamento: true,
-          "Tensão e Corrente": true,
-        },
-        "Área de Serv.": {
-          "Tugs e Tues": true,
-          Iluminação: true,
-          Acabamento: true,
-          "Tensão e Corrente": true,
-        },
-        Varanda: {
-          "Tugs e Tues": true,
-          Iluminação: true,
-          Acabamento: true,
-          "Tensão e Corrente": true,
-        },
-      },
-      quadro: {
-        Acabamento: true,
-        Circuitos: true,
-        Identificação: true,
-        "Tensão e Corrente": true,
-      },
-      especificacoes: { Campainha: true, Chuveiro: true },
-      erros: [],
-      fotos: Array(9).fill(""),
-    };
+    if (duplicated)
+      return { ok: false, error: `Já existe um condomínio chamado "${nome}".` };
+    return inserted
+      ? { ok: true }
+      : { ok: false, error: "Não foi possível adicionar." };
   }
 
-  // condomínio
-  function addCondominio(nome: string, tipo: CondominioTipo) {
-    const novo: Condominio = {
-      id: crypto.randomUUID(),
-      nome,
-      tipo,
-      blocos: [],
-      casas: tipo === "CASAS" ? [] : undefined,
-    };
-    void saveData({ ...data, condominios: [...data.condominios, novo] });
-  }
-
-  function removeCondominio(id: string) {
-    void saveData({
-      ...data,
-      condominios: data.condominios.filter((c) => c.id !== id),
+  function removeCondominio(condId: string) {
+    setData((prev) => {
+      const d = structuredClone(prev);
+      d.condominios = d.condominios.filter((c) => c.id !== condId);
+      saveData(d);
+      return d;
     });
   }
 
-  // blocos/apartamentos
-  function addBloco(condId: string, idBloco: string) {
-    if (!idBloco.trim()) return;
-    const d = structuredClone(data);
-    const cond = d.condominios.find((c) => c.id === condId);
-    if (!cond || cond.tipo !== "BLOCOS") return;
-    if (cond.blocos.some((b) => b.id === idBloco)) return;
-    const novo: Bloco = { id: idBloco, apartamentos: [] };
-    cond.blocos.push(novo);
-    void saveData(d);
+  function addBloco(condId: string, idBlocoRaw: string): OpResult {
+    const idBloco = idBlocoRaw.trim();
+    if (!idBloco) return { ok: false, error: "Informe o número do bloco." };
+
+    let ok = false;
+    let error: string | undefined;
+
+    setData((prev) => {
+      const d = structuredClone(prev);
+      const cond = d.condominios.find((c) => c.id === condId);
+      if (!cond) {
+        error = "Condomínio não encontrado.";
+        return prev;
+      }
+
+      const key = norm(idBloco);
+      if ((cond.blocos ?? []).some((b) => norm(b.id) === key)) {
+        error = `O bloco "${idBloco}" já existe neste condomínio.`;
+        return prev;
+      }
+      (cond.blocos ??= []).push({ id: idBloco, apartamentos: [] });
+      saveState(d);
+      ok = true;
+      return d;
+    });
+
+    return ok
+      ? { ok: true }
+      : { ok: false, error: error ?? "Não foi possível adicionar." };
   }
 
   function removeBloco(condId: string, blocoId: string) {
-    const d = structuredClone(data);
-    const cond = d.condominios.find((c) => c.id === condId);
-    if (!cond || cond.tipo !== "BLOCOS") return;
-    cond.blocos = cond.blocos.filter((b) => b.id !== blocoId);
-    void saveData(d);
+    setData((prev) => {
+      const d = structuredClone(prev);
+      const cond = d.condominios.find((c) => c.id === condId);
+      if (!cond) return prev;
+      cond.blocos = (cond.blocos ?? []).filter((b) => b.id !== blocoId);
+      saveData(d);
+      return d;
+    });
   }
 
-  function addApartamento(condId: string, blocoId: string, idApto: string) {
-    if (!idApto.trim()) return;
-    const d = structuredClone(data);
-    const cond = d.condominios.find((c) => c.id === condId);
-    const bloco = cond?.blocos.find((b) => b.id === blocoId);
-    if (!bloco) return;
-    if (bloco.apartamentos.some((a) => a.id === idApto)) return;
-    bloco.apartamentos.push(newUnit(idApto));
-    void saveData(d);
+  function addApartamento(
+    condId: string,
+    blocoId: string,
+    idAptoRaw: string
+  ): OpResult {
+    const idApto = idAptoRaw.trim();
+    if (!idApto)
+      return { ok: false, error: "Informe o número do apartamento." };
+
+    let ok = false;
+    let error: string | undefined;
+
+    setData((prev) => {
+      const d = structuredClone(prev);
+      const cond = d.condominios.find((c) => c.id === condId);
+      if (!cond) {
+        error = "Condomínio não encontrado.";
+        return prev;
+      }
+
+      const bloco = (cond.blocos ?? []).find((b) => b.id === blocoId);
+      if (!bloco) {
+        error = "Bloco não encontrado.";
+        return prev;
+      }
+
+      const key = norm(idApto);
+      if ((bloco.apartamentos ?? []).some((a) => norm(a.id) === key)) {
+        error = `O apartamento "${idApto}" já existe neste bloco.`;
+        return prev;
+      }
+
+      bloco.apartamentos.push(createUnidadeDefault(idApto));
+      saveState(d);
+      ok = true;
+      return d;
+    });
+
+    return ok
+      ? { ok: true }
+      : { ok: false, error: error ?? "Não foi possível adicionar." };
   }
 
-  function removeApartamento(condId: string, blocoId: string, aptoId: string) {
-    const d = structuredClone(data);
-    const cond = d.condominios.find((c) => c.id === condId);
-    const bloco = cond?.blocos.find((b) => b.id === blocoId);
-    if (!bloco) return;
-    bloco.apartamentos = bloco.apartamentos.filter((a) => a.id !== aptoId);
-    void saveData(d);
+  function removeApartamento(condId: string, blocoId: string, idApto: string) {
+    setData((prev) => {
+      const d = structuredClone(prev);
+      const cond = d.condominios.find((c) => c.id === condId);
+      if (!cond) return prev;
+
+      const bloco = (cond.blocos ?? []).find((b) => b.id === blocoId);
+      if (!bloco) return prev;
+
+      bloco.apartamentos = (bloco.apartamentos ?? []).filter(
+        (a) => a.id !== idApto
+      );
+
+      saveData(d);
+      return d;
+    });
   }
+
+  function addCasa(condId: string, idCasaRaw: string): OpResult {
+    const idCasa = idCasaRaw.trim();
+    if (!idCasa) return { ok: false, error: "Informe o número da casa." };
+
+    let ok = false;
+    let error: string | undefined;
+
+    setData((prev) => {
+      const d = structuredClone(prev);
+      const cond = d.condominios.find((c) => c.id === condId);
+      if (!cond) {
+        error = "Condomínio não encontrado.";
+        return prev;
+      }
+
+      const key = norm(idCasa);
+
+      if ((cond.casas ?? []).some((a: Apartamento) => norm(a.id) === key)) {
+        error = `A casa "${idCasa}" já existe neste condomínio.`;
+        return prev;
+      }
+
+      (cond.casas ??= []).push(createUnidadeDefault(idCasa));
+      saveState(d);
+      ok = true;
+      return d;
+    });
+
+    return ok
+      ? { ok: true }
+      : { ok: false, error: error ?? "Não foi possível adicionar." };
+  }
+
+  function removeCasa(condId: string, idCasa: string) {
+    setData((prev) => {
+      const d = structuredClone(prev);
+      const cond = d.condominios.find((c) => c.id === condId);
+      if (!cond) return prev;
+
+      cond.casas = (cond.casas ?? []).filter(
+        (a: Apartamento) => a.id !== idCasa
+      );
+      saveData(d);
+      return d;
+    });
+  }
+
+  /* ======================= Upserts (editar/salvar) ======================== */
 
   function upsertApartamento(
     condId: string,
     blocoId: string,
     apto: Apartamento
   ) {
-    const d = structuredClone(data);
-    const cond = d.condominios.find((c) => c.id === condId);
-    const bloco = cond?.blocos.find((b) => b.id === blocoId);
-    if (!bloco) return;
-    const idx = bloco.apartamentos.findIndex((a) => a.id === apto.id);
-    if (idx >= 0) bloco.apartamentos[idx] = apto;
-    else bloco.apartamentos.push(apto);
-    void saveData(d);
+    setData((prev) => {
+      const d = structuredClone(prev);
+      const cond = d.condominios.find((c) => c.id === condId);
+      if (!cond) return prev;
+
+      const bloco = (cond.blocos ?? []).find((b) => b.id === blocoId);
+      if (!bloco) return prev;
+
+      const i = (bloco.apartamentos ?? []).findIndex((a) => a.id === apto.id);
+      if (i >= 0) bloco.apartamentos[i] = apto;
+      else bloco.apartamentos.push(apto);
+
+      saveState(d);
+      return d;
+    });
   }
 
-  // casas
-  function addCasa(condId: string, idCasa: string) {
-    if (!idCasa.trim()) return;
-    const d = structuredClone(data);
-    const cond = d.condominios.find((c) => c.id === condId);
-    if (!cond || cond.tipo !== "CASAS") return;
-    cond.casas ??= [];
-    if (cond.casas.some((u) => u.id === idCasa)) return;
-    cond.casas.push(newUnit(idCasa));
-    void saveData(d);
-  }
+  function upsertCasa(condId: string, apto: Apartamento) {
+    setData((prev) => {
+      const d = structuredClone(prev);
+      const cond = d.condominios.find((c) => c.id === condId);
+      if (!cond) return prev;
 
-  function removeCasa(condId: string, idCasa: string) {
-    const d = structuredClone(data);
-    const cond = d.condominios.find((c) => c.id === condId);
-    if (!cond || cond.tipo !== "CASAS" || !cond.casas) return;
-    cond.casas = cond.casas.filter((u) => u.id !== idCasa);
-    void saveData(d);
-  }
+      const arr: Apartamento[] = (cond.casas ??= []);
+      const i = arr.findIndex((a) => a.id === apto.id);
+      if (i >= 0) arr[i] = apto;
+      else arr.push(apto);
 
-  function upsertCasa(condId: string, casa: Apartamento) {
-    const d = structuredClone(data);
-    const cond = d.condominios.find((c) => c.id === condId);
-    if (!cond || cond.tipo !== "CASAS") return;
-    cond.casas ??= [];
-    const idx = cond.casas.findIndex((u) => u.id === casa.id);
-    if (idx >= 0) cond.casas[idx] = casa;
-    else cond.casas.push(casa);
-    void saveData(d);
+      saveState(d);
+      return d;
+    });
   }
 
   const value = useMemo<Ctx>(
     () => ({
       data,
-      loading,
-      saveData,
+      setData,
       addCondominio,
       removeCondominio,
       addBloco,
       removeBloco,
       addApartamento,
       removeApartamento,
-      upsertApartamento,
       addCasa,
       removeCasa,
+      upsertApartamento,
       upsertCasa,
+      saveData,
     }),
-    [data, loading]
+    [data]
   );
 
   return (
@@ -284,7 +407,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
 }
 
 // eslint-disable-next-line react-refresh/only-export-components
-export function useAppState() {
+export function useAppState(): Ctx {
   const ctx = useContext(AppStateContext);
   if (!ctx)
     throw new Error("useAppState deve ser usado dentro de AppStateProvider");

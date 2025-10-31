@@ -6,22 +6,32 @@ import type { CondominioTipo } from "../types";
 import BackupControls from "../components/BackupControls";
 
 export default function Home() {
-  const { data, loading, addCondominio, removeCondominio } = useAppState();
+  const { data, addCondominio, removeCondominio } = useAppState();
 
   const [nomeCondominio, setNomeCondominio] = useState("");
-  const [tipo, setTipo] = useState<CondominioTipo>("BLOCOS"); // NOVO
+  const [tipo, setTipo] = useState<CondominioTipo>("BLOCOS");
+  const [errorMsg, setErrorMsg] = useState("");
+
   const [confirmDelete, setConfirmDelete] = useState<{
     open: boolean;
     label: string;
     onConfirm: () => void;
   }>({ open: false, label: "", onConfirm: () => {} });
 
-  if (loading)
-    return (
-      <main className="p-4">
-        <div className="max-w-5xl mx-auto">Carregando…</div>
-      </main>
-    );
+  function handleAdd() {
+    const nome = nomeCondominio.trim();
+    if (!nome) {
+      setErrorMsg("Informe o nome do condomínio.");
+      return;
+    }
+    const res = addCondominio(nome, tipo);
+    if (!res.ok) {
+      setErrorMsg(res.error);
+      return;
+    }
+    setErrorMsg("");
+    setNomeCondominio("");
+  }
 
   return (
     <main className="p-4">
@@ -32,7 +42,11 @@ export default function Home() {
         <div className="flex flex-col md:flex-row gap-2 md:items-center">
           <input
             value={nomeCondominio}
-            onChange={(e) => setNomeCondominio(e.target.value)}
+            onChange={(e) => {
+              setNomeCondominio(e.target.value);
+              if (errorMsg) setErrorMsg("");
+            }}
+            onKeyDown={(e) => e.key === "Enter" && handleAdd()}
             placeholder="Nome do condomínio"
             className="border rounded-lg px-3 py-2 flex-1"
           />
@@ -69,18 +83,23 @@ export default function Home() {
           </div>
 
           <button
-            onClick={() => {
-              const nome = nomeCondominio.trim();
-              if (!nome) return;
-              addCondominio(nome, tipo); // passa o tipo escolhido
-              setNomeCondominio("");
-            }}
-            className="px-4 py-2 rounded-lg cursor-pointer bg-blue-600 text-white"
+            onClick={handleAdd}
+            disabled={!nomeCondominio.trim()}
+            className={`px-4 py-2 rounded-lg text-white ${
+              nomeCondominio.trim()
+                ? "bg-blue-600 hover:bg-blue-700"
+                : "bg-blue-300 cursor-not-allowed"
+            }`}
+            title="Adicionar condomínio"
           >
             Adicionar
           </button>
+
           <BackupControls />
         </div>
+
+        {/* mensagem de erro */}
+        {errorMsg && <div className="text-sm text-red-600">{errorMsg}</div>}
 
         {/* lista */}
         <div className="grid md:grid-cols-2 gap-4">

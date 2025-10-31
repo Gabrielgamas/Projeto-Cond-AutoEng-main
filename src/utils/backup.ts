@@ -1,292 +1,305 @@
-/* src/utils/backup.ts */
-import { get, set } from "idb-keyval";
-import type { Condominio, Bloco, Apartamento } from "../types";
+// src/utils/backup.ts
+import type {
+  Apartamento,
+  ChecklistComodo,
+  Condominio,
+  Especificacao,
+  QuadroDistribuicao,
+  TabelaComodos,
+} from "../types";
 
-/** Use a MESMA chave do seu AppState/IndexedDB */
-export const STORAGE_KEY = "autoeng-data";
-
-/** Estrutura mínima salva no storage */
-type AppState = {
+/* =========================================================================
+ * Tipos básicos do arquivo de backup
+ * ========================================================================= */
+export type AppData = {
   schemaVersion: number;
   condominios: Condominio[];
 };
 
-/** Tipo mínimo para deduplicar erros */
-type ErroItem = { descricao?: string; comodo?: string; item?: string };
+/* =========================================================================
+ * Utilidades gerais (sem 'any')
+ * ========================================================================= */
+const norm = (s: string) =>
+  s
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, " ");
 
-/* ====================================================================== */
-/*                                EXPORTAR                                 */
-/* ====================================================================== */
-export async function exportData(
-  filenamePrefix = "autoeng_backup"
-): Promise<void> {
-  const state = (await get(STORAGE_KEY)) as AppState | undefined;
-  const blob = new Blob([JSON.stringify(state ?? {}, null, 2)], {
-    type: "application/json",
-  });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  const today = new Date().toISOString().slice(0, 10);
-  a.href = url;
-  a.download = `${filenamePrefix}_${today}.json`;
-  a.click();
-  URL.revokeObjectURL(url);
+type AnyRec = Record<string, unknown>;
+const isRec = (v: unknown): v is AnyRec =>
+  !!v && typeof v === "object" && !Array.isArray(v);
+const asArray = (v: unknown): unknown[] => (Array.isArray(v) ? v : []);
+
+const put = <T>(obj: AnyRec, key: string, val: T) => {
+  (obj as { [k: string]: T })[key] = val;
+};
+
+/* =========================================================================
+ * Leitura/validação do arquivo
+ * ========================================================================= */
+export async function readBackupFile(file: File): Promise<AppData> {
+  const text = await file.text();
+  const parsed: unknown = JSON.parse(text);
+  // normaliza para garantir fotos string[9], arrays presentes, etc.
+  normalizeRoot(parsed);
+  return parsed as AppData;
 }
 
-/* ====================================================================== */
-/*                       IMPORTAR (SUBSTITUI TUDO)                         */
-/* ====================================================================== */
-export async function importDataFromFile(file: File): Promise<void> {
-  const txt = await file.text();
-  const json = JSON.parse(txt);
-  await set(STORAGE_KEY, json);
-  location.reload();
+export function isValidAppData(v: unknown): v is AppData {
+  if (!isRec(v)) return false;
+  return typeof v.schemaVersion === "number" && Array.isArray(v.condominios);
 }
 
-/* ====================================================================== */
-/*                    HELPERS (type guards e utilitários)                  */
-/* ====================================================================== */
-function byId<T extends { id: string }>(arr: T[] | undefined) {
-  const m = new Map<string, T>();
-  (arr ?? []).forEach((x) => m.set(x.id, x));
-  return m;
+/* =========================================================================
+ * Normalização do JSON (sem 'any')
+ * - garante que blocos/casas existam como array
+ * - garante que cada unidade tenha exatamente 9 fotos string
+ * ========================================================================= */
+function normalizeUnidade(u: unknown): void {
+  if (!isRec(u)) return;
+
+  const rawFotos = asArray(u["fotos"]);
+  const fotos = rawFotos
+    .map((x) => (typeof x === "string" ? x : ""))
+    .slice(0, 9);
+
+  while (fotos.length < 9) fotos.push("");
+  put<string[]>(u, "fotos", fotos);
 }
 
-function blobToDataUrl(b: Blob): Promise<string> {
-  return new Promise((resolve) => {
-    const fr = new FileReader();
-    fr.onload = () => resolve(fr.result as string);
-    fr.readAsDataURL(b);
-  });
+function normalizeRoot(data: unknown): void {
+  if (!isRec(data)) return;
+
+  const list = asArray(data["condominios"]);
+  if (!Array.isArray(list)) return;
+
+  for (const condRaw of list) {
+    if (!isRec(condRaw)) continue;
+
+    const tipo = condRaw["tipo"] === "CASAS" ? "CASAS" : "BLOCOS";
+    put(condRaw, "tipo", tipo);
+
+    const blocos = asArray(condRaw["blocos"]);
+    put(condRaw, "blocos", blocos);
+
+    const casas = asArray(condRaw["casas"]);
+    put(condRaw, "casas", casas);
+
+    for (const bRaw of blocos) {
+      if (!isRec(bRaw)) continue;
+      const aptos = asArray(bRaw["apartamentos"]);
+      put(bRaw, "apartamentos", aptos);
+      for (const a of aptos) normalizeUnidade(a);
+    }
+    for (const a of casas) normalizeUnidade(a);
+  }
 }
 
-/** Garante fotos como dataURL (string[]) */
-async function normalizeFotosToDataUrl(
-  fotos: (string | Blob)[] | undefined
-): Promise<string[]> {
-  const out: string[] = [];
-  for (const f of fotos ?? []) {
-    if (typeof f === "string") out.push(f);
-    else out.push(await blobToDataUrl(f));
+/* =========================================================================
+ * Merge profundo das unidades (apartamentos/casas)
+ * ========================================================================= */
+const COMODO_COLS: (keyof ChecklistComodo)[] = [
+  "Tugs e Tues",
+  "Iluminação",
+  "Acabamento",
+  "Tensão e Corrente",
+];
+
+const orBool = (a?: boolean, b?: boolean) => Boolean(a) || Boolean(b);
+
+function mergeChecklist(
+  a: ChecklistComodo,
+  b: ChecklistComodo
+): ChecklistComodo {
+  const out = {} as ChecklistComodo;
+  for (const k of COMODO_COLS) {
+    out[k] = orBool(a?.[k], b?.[k]);
   }
   return out;
 }
 
-/** Mescla fotos mantendo string[] e limite 9 */
-function mergeFotosString(
-  atuais: string[],
-  novas: string[],
-  max = 9
-): string[] {
-  const out = [...atuais];
-  for (const f of novas) {
-    if (out.length >= max) break;
-    out.push(f);
-  }
-  return out.slice(0, max);
+function mergeComodos(a: TabelaComodos, b: TabelaComodos): TabelaComodos {
+  const out: TabelaComodos = {} as TabelaComodos;
+  const keys = new Set<keyof TabelaComodos>([
+    ...(Object.keys(a) as (keyof TabelaComodos)[]),
+    ...(Object.keys(b) as (keyof TabelaComodos)[]),
+  ]);
+  keys.forEach((k) => {
+    out[k] = mergeChecklist(
+      a?.[k] ?? ({} as ChecklistComodo),
+      b?.[k] ?? ({} as ChecklistComodo)
+    );
+  });
+  return out;
 }
 
-/** Dedup por descricao+comodo+item */
-function dedupErros(list: ErroItem[] | undefined): ErroItem[] {
+function mergeQuadro(
+  a: QuadroDistribuicao,
+  b: QuadroDistribuicao
+): QuadroDistribuicao {
+  return {
+    Acabamento: orBool(a?.Acabamento, b?.Acabamento),
+    Circuitos: orBool(a?.Circuitos, b?.Circuitos),
+    Identificação: orBool(a?.Identificação, b?.Identificação),
+    "Tensão e Corrente": orBool(
+      a?.["Tensão e Corrente"],
+      b?.["Tensão e Corrente"]
+    ),
+  };
+}
+
+function mergeEspecificacoes(
+  a: Especificacao,
+  b: Especificacao
+): Especificacao {
+  return {
+    Campainha: orBool(a?.Campainha, b?.Campainha),
+    Chuveiro: orBool(a?.Chuveiro, b?.Chuveiro),
+  };
+}
+
+type ErroApto = NonNullable<Apartamento["erros"]>[number];
+const erroKey = (e: ErroApto) =>
+  `${e?.descricao ?? ""}|${e?.comodo ?? ""}|${e?.item ?? ""}`;
+
+function mergeErros(a: ErroApto[] = [], b: ErroApto[] = []): ErroApto[] {
   const seen = new Set<string>();
-  const out: ErroItem[] = [];
-  for (const e of list ?? []) {
-    const key = `${e?.descricao ?? ""}|${e?.comodo ?? ""}|${e?.item ?? ""}`;
-    if (!seen.has(key)) {
-      seen.add(key);
+  const out: ErroApto[] = [];
+  for (const e of [...a, ...b]) {
+    const k = erroKey(e);
+    if (k && !seen.has(k)) {
+      seen.add(k);
       out.push(e);
     }
   }
   return out;
 }
 
-/* ---------- type guards/normalizadores para campos opcionais ---------- */
-
-/** Retorna 'BLOCOS'/'CASAS' se existir no objeto */
-function getTipo(obj: unknown): "BLOCOS" | "CASAS" | undefined {
-  if (obj && typeof obj === "object" && "tipo" in obj) {
-    const t = (obj as { tipo?: unknown }).tipo;
-    return t === "BLOCOS" || t === "CASAS" ? t : undefined;
+function mergeFotos(a: string[] = [], b: string[] = []): string[] {
+  const out = Array.from({ length: 9 }, (_, i) => a[i] ?? "");
+  let bi = 0;
+  for (let i = 0; i < out.length; i++) {
+    if (!out[i]) {
+      while (bi < b.length && !b[bi]) bi++;
+      if (bi < b.length) {
+        out[i] = b[bi]!;
+        bi++;
+      }
+    }
   }
-  return undefined;
+  return out.slice(0, 9);
 }
 
-/** Retorna a lista de casas se existir e for array */
-function getCasas(obj: unknown): Apartamento[] | undefined {
-  if (obj && typeof obj === "object" && "casas" in obj) {
-    const v = (obj as { casas?: unknown }).casas;
-    return Array.isArray(v) ? (v as Apartamento[]) : undefined;
-  }
-  return undefined;
-}
-
-/** Retorna um endereço (objeto) se existir */
-function getEndereco(obj: unknown): Record<string, unknown> | undefined {
-  if (obj && typeof obj === "object" && "endereco" in obj) {
-    const v = (obj as { endereco?: unknown }).endereco;
-    return v && typeof v === "object"
-      ? (v as Record<string, unknown>)
-      : undefined;
-  }
-  return undefined;
-}
-
-/** Lê fotos como união (string|Blob) se existir esse campo */
-function getFotosUnion(obj: unknown): (string | Blob)[] | undefined {
-  if (obj && typeof obj === "object" && "fotos" in obj) {
-    const v = (obj as { fotos?: unknown }).fotos;
-    return Array.isArray(v) ? (v as (string | Blob)[]) : undefined;
-  }
-  return undefined;
-}
-
-/* ====================================================================== */
-/*                                MERGES                                   */
-/* ====================================================================== */
-/** Mescla unidade (apto/casa) mantendo fotos como string[] e SEM `any` */
-async function mergeUnidade(
-  atual: Apartamento,
-  inc: Apartamento
-): Promise<Apartamento> {
-  // fotos: aceita string|Blob em ambos os lados e normaliza para string
-  const fotosA = await normalizeFotosToDataUrl(
-    getFotosUnion(atual) ?? atual.fotos
-  );
-  const fotosB = await normalizeFotosToDataUrl(getFotosUnion(inc) ?? inc.fotos);
-
-  const errosA = (atual.erros ?? []) as unknown as ErroItem[];
-  const errosB = (inc.erros ?? []) as unknown as ErroItem[];
-  const errosMerged = dedupErros([
-    ...errosA,
-    ...errosB,
-  ]) as unknown as Apartamento["erros"];
-
+function mergeUnidade(a: Apartamento, b: Apartamento): Apartamento {
   return {
-    ...atual,
-    comodos: { ...(atual.comodos ?? {}), ...(inc.comodos ?? {}) },
-    quadro: { ...(atual.quadro ?? {}), ...(inc.quadro ?? {}) },
-    especificacoes: {
-      ...(atual.especificacoes ?? {}),
-      ...(inc.especificacoes ?? {}),
-    },
-    erros: errosMerged,
-    fotos: mergeFotosString(fotosA, fotosB, 9), // sempre string[]
+    id: a.id,
+    comodos: mergeComodos(a.comodos, b.comodos),
+    quadro: mergeQuadro(a.quadro, b.quadro),
+    especificacoes: mergeEspecificacoes(a.especificacoes, b.especificacoes),
+    erros: mergeErros(a.erros, b.erros),
+    fotos: mergeFotos(a.fotos, b.fotos),
   };
 }
 
-/** Mescla bloco */
-async function mergeBloco(atual: Bloco, inc: Bloco): Promise<Bloco> {
-  const mapA = byId(atual.apartamentos);
-  const mapB = byId(inc.apartamentos);
-  const ids = new Set<string>([...mapA.keys(), ...mapB.keys()]);
-  const apartamentos: Apartamento[] = [];
-  for (const id of ids) {
-    const A = mapA.get(id);
-    const B = mapB.get(id);
-    if (A && B) apartamentos.push(await mergeUnidade(A, B));
-    else apartamentos.push((A ?? B)!);
+/* =========================================================================
+ * Merge de blocos/apartamentos
+ * ========================================================================= */
+function mergeBlocos(dest: Condominio, src: Condominio) {
+  dest.blocos ??= [];
+  const byId = new Map(dest.blocos.map((b) => [norm(b.id), b]));
+
+  for (const bInc of src.blocos ?? []) {
+    const key = norm(bInc.id);
+    const bCur = byId.get(key);
+    if (!bCur) {
+      dest.blocos.push(bInc);
+      byId.set(key, bInc);
+      continue;
+    }
+    // mesmo bloco: unir apartamentos
+    bCur.apartamentos ??= [];
+    const aptById = new Map(bCur.apartamentos.map((a) => [norm(a.id), a]));
+    for (const aInc of bInc.apartamentos ?? []) {
+      const aKey = norm(aInc.id);
+      const aCur = aptById.get(aKey);
+      if (!aCur) {
+        bCur.apartamentos.push(aInc);
+        aptById.set(aKey, aInc);
+      } else {
+        const merged = mergeUnidade(aCur, aInc);
+        Object.assign(aCur, merged);
+      }
+    }
   }
-  return { ...atual, apartamentos };
 }
 
-/** Mescla casas (modo CASAS) */
-async function mergeCasas(
-  atuais: Apartamento[] | undefined,
-  novas: Apartamento[] | undefined
-) {
-  const mapA = byId(atuais);
-  const mapB = byId(novas);
-  const ids = new Set<string>([...mapA.keys(), ...mapB.keys()]);
-  const casas: Apartamento[] = [];
-  for (const id of ids) {
-    const A = mapA.get(id);
-    const B = mapB.get(id);
-    if (A && B) casas.push(await mergeUnidade(A, B));
-    else casas.push((A ?? B)!);
-  }
-  return casas;
+/* =========================================================================
+ * Merge de casas (sem 'any')
+ * ========================================================================= */
+function readCasas(c: Condominio): Apartamento[] {
+  const rec = c as Record<string, unknown>;
+  const raw = rec["casas"];
+  return Array.isArray(raw) ? (raw as Apartamento[]) : [];
 }
 
-/** Mescla condomínio (sem `any`) */
-async function mergeCondominio(
-  atual: Condominio,
-  inc: Condominio
-): Promise<Condominio> {
-  // tipo: preserva o existente; senão, usa o do import; senão, "BLOCOS"
-  const tipo = getTipo(atual) ?? getTipo(inc) ?? "BLOCOS";
-
-  // blocos (modo BLOCOS)
-  const mapA = byId(atual.blocos);
-  const mapB = byId(inc.blocos);
-  const blocosIds = new Set<string>([...mapA.keys(), ...mapB.keys()]);
-  const blocos: Bloco[] = [];
-  for (const id of blocosIds) {
-    const A = mapA.get(id);
-    const B = mapB.get(id);
-    if (A && B) blocos.push(await mergeBloco(A, B));
-    else blocos.push((A ?? B)!);
+function ensureCasas(c: Condominio): Apartamento[] {
+  const rec = c as Record<string, unknown>;
+  const raw = rec["casas"];
+  if (!Array.isArray(raw)) {
+    const created: Apartamento[] = [];
+    rec["casas"] = created;
+    return created;
   }
-
-  // casas (modo CASAS)
-  const casas = await mergeCasas(getCasas(atual), getCasas(inc));
-
-  // endereço (opcional): só adiciona se existir em um dos lados
-  const enderecoMerged = {
-    ...(getEndereco(atual) ?? {}),
-    ...(getEndereco(inc) ?? {}),
-  };
-  const enderecoPart =
-    Object.keys(enderecoMerged).length > 0 ? { endereco: enderecoMerged } : {};
-
-  // monta o retorno com campos extras opcionais
-  return {
-    ...atual,
-    nome: atual.nome || inc.nome,
-    ...enderecoPart,
-    // Estes 2 campos podem não existir no tipo local; mantenho mesmo assim:
-
-    tipo,
-
-    casas,
-    blocos,
-  };
+  return raw as Apartamento[];
 }
 
-/* ====================================================================== */
-/*                 IMPORTAR (ACRESCENTAR / MESCLAR)                        */
-/* ====================================================================== */
-export async function importDataMerge(file: File): Promise<void> {
-  const txt = await file.text();
-  const incoming: AppState = JSON.parse(txt);
+function mergeCasas(dest: Condominio, src: Condominio) {
+  const casasDest = ensureCasas(dest);
+  const byId = new Map(casasDest.map((a) => [norm(a.id), a]));
 
-  const current: AppState = ((await get(STORAGE_KEY)) as
-    | AppState
-    | undefined) ?? {
-    schemaVersion: incoming?.schemaVersion ?? 2,
-    condominios: [],
-  };
+  const casasSrc = readCasas(src);
+  for (const aInc of casasSrc) {
+    const key = norm(aInc.id);
+    const aCur = byId.get(key);
+    if (!aCur) {
+      casasDest.push(aInc);
+      byId.set(key, aInc);
+    } else {
+      const merged = mergeUnidade(aCur, aInc);
+      Object.assign(aCur, merged);
+    }
+  }
+}
 
-  const mapA = byId(current.condominios);
-  const mapB = byId(incoming?.condominios);
+/* =========================================================================
+ * Função principal usada pelo botão "Acrescentar"
+ * ========================================================================= */
+export async function mergeAppData(
+  current: AppData,
+  incoming: AppData
+): Promise<AppData> {
+  const out: AppData = structuredClone(current);
 
-  const ids = new Set<string>([...mapA.keys(), ...mapB.keys()]);
-  const merged: Condominio[] = [];
+  for (const cInc of incoming.condominios) {
+    const idx = out.condominios.findIndex(
+      (c) => norm(c.nome) === norm(cInc.nome)
+    );
+    if (idx < 0) {
+      out.condominios.push(cInc);
+      continue;
+    }
 
-  for (const id of ids) {
-    const A = mapA.get(id);
-    const B = mapB.get(id);
-    if (A && B) merged.push(await mergeCondominio(A, B));
-    else merged.push((A ?? B)!);
+    // condomínio já existe: unir conteúdos
+    const cCur = out.condominios[idx];
+    mergeBlocos(cCur, cInc);
+    mergeCasas(cCur, cInc);
+
+    // Mantemos o tipo do destino (para não “mudar de natureza” por engano).
+    // Se preferir priorizar o tipo do arquivo, é só descomentar:
+    // cCur.tipo = cInc.tipo;
   }
 
-  const out: AppState = {
-    schemaVersion: Math.max(
-      current.schemaVersion ?? 2,
-      incoming?.schemaVersion ?? 2
-    ),
-    condominios: merged,
-  };
-
-  await set(STORAGE_KEY, out);
-  location.reload();
+  return out;
 }

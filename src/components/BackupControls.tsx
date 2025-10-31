@@ -1,46 +1,123 @@
-/* src/components/BackupControls.tsx */
-import {
-  exportData,
-  importDataFromFile,
-  importDataMerge,
-} from "../utils/backup";
+import React from "react";
+import { useAppState } from "../state/AppStateContext";
+import { readBackupFile, mergeAppData, isValidAppData } from "../utils/backup";
+
+function downloadJson(filename: string, data: unknown) {
+  const blob = new Blob([JSON.stringify(data, null, 2)], {
+    type: "application/json",
+  });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
 
 export default function BackupControls() {
+  const { data, setData, saveData } = useAppState();
+
+  // estilo “visualmente escondido”, mas NÃO display:none (compatibilidade iOS/Safari)
+  const hiddenFileStyle: React.CSSProperties = {
+    position: "absolute",
+    width: 0.1,
+    height: 0.1,
+    opacity: 0,
+    overflow: "hidden",
+    zIndex: -1,
+  };
+
+  // EXPORTAR
+  function handleExport() {
+    const ts = new Date();
+    const pad = (n: number) => String(n).padStart(2, "0");
+    const stamp = `${ts.getFullYear()}-${pad(ts.getMonth() + 1)}-${pad(
+      ts.getDate()
+    )}_${pad(ts.getHours())}-${pad(ts.getMinutes())}`;
+    downloadJson(`autoeng-backup_${stamp}.json`, data);
+  }
+
+  // IMPORTAR — ACRESCENTAR
+  async function onAppendFile(e: React.ChangeEvent<HTMLInputElement>) {
+    try {
+      const file = e.target.files?.[0];
+      // limpa pra permitir escolher o MESMO arquivo novamente
+      e.target.value = "";
+      if (!file) return;
+
+      const incoming = await readBackupFile(file);
+      if (!isValidAppData(incoming)) {
+        return;
+      }
+      const merged = await mergeAppData(data, incoming);
+      setData(merged);
+    } catch (err) {
+      console.error(err);
+    }
+  }
+
+  // IMPORTAR — SUBSTITUIR
+  async function onReplaceFile(e: React.ChangeEvent<HTMLInputElement>) {
+    try {
+      const file = e.target.files?.[0];
+      e.target.value = "";
+      if (!file) return;
+
+      const incoming = await readBackupFile(file);
+      if (!isValidAppData(incoming)) {
+        return;
+      }
+      saveData(incoming);
+    } catch (err) {
+      console.error(err);
+    }
+  }
+
   return (
-    <div className="flex flex-wrap items-center gap-2">
+    <div className="flex items-center gap-2">
+      {/* EXPORTAR */}
       <button
-        onClick={() => exportData()}
-        className="cursor-pointer px-3 py-2 rounded-lg bg-yellow-500 hover:border hover:bg-gray-50"
-        title="Baixar um arquivo .json com todos os dados"
+        type="button"
+        onClick={handleExport}
+        className="px-3 py-2 rounded-lg bg-gray-800 hover:bg-gray-900 text-white"
+        title="Exporta um arquivo .json com todos os dados"
       >
         Exportar
       </button>
 
-      <label className="px-3 py-2 rounded-lg bg-green-400 hover:border hover:bg-gray-50 cursor-pointer">
+      {/* ACRESCENTAR */}
+      <label
+        htmlFor="append-json"
+        className="px-3 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer"
+        title="Acrescenta (mescla) o conteúdo de um backup ao atual"
+      >
         Acrescentar
-        <input
-          type="file"
-          accept="application/json"
-          className="hidden"
-          onChange={(e) => {
-            const f = e.target.files?.[0];
-            if (f) importDataMerge(f);
-          }}
-        />
       </label>
+      <input
+        id="append-json"
+        type="file"
+        accept="application/json,.json"
+        style={hiddenFileStyle}
+        onChange={onAppendFile}
+      />
 
-      <label className="px-3 py-2 rounded-lg bg-green-600 hover:border hover:bg-gray-50 cursor-pointer">
+      {/* SUBSTITUIR */}
+      <label
+        htmlFor="replace-json"
+        className="px-3 py-2 rounded-lg bg-red-600 hover:bg-red-700 text-white cursor-pointer"
+        title="Substitui TODOS os dados pelo backup selecionado"
+      >
         Substituir
-        <input
-          type="file"
-          accept="application/json"
-          className="hidden"
-          onChange={(e) => {
-            const f = e.target.files?.[0];
-            if (f) importDataFromFile(f);
-          }}
-        />
       </label>
+      <input
+        id="replace-json"
+        type="file"
+        accept="application/json,.json"
+        style={hiddenFileStyle}
+        onChange={onReplaceFile}
+      />
     </div>
   );
 }

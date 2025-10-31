@@ -8,17 +8,17 @@ import ConfirmDeleteDialog from "../components/ConfirmDeleteDialog";
 export default function CondominioPage() {
   const { condId = "" } = useParams();
   const navigate = useNavigate();
+
   const {
     data,
-    loading,
     addBloco,
     removeBloco,
     addApartamento,
     removeApartamento,
-    upsertApartamento,
+    upsertApartamento, // <-- agora existe no contexto
     addCasa,
     removeCasa,
-    upsertCasa,
+    upsertCasa, // <-- agora existe no contexto
   } = useAppState();
 
   const cond = useMemo(
@@ -26,24 +26,8 @@ export default function CondominioPage() {
     [data, condId]
   );
 
-  const [idBloco, setIdBloco] = useState("");
-  const [idAptoPorBloco, setIdAptoPorBloco] = useState<Record<string, string>>(
-    {}
-  );
-  const [idCasa, setIdCasa] = useState("");
-  const [confirmDelete, setConfirmDelete] = useState<{
-    open: boolean;
-    label: string;
-    onConfirm: () => void;
-  }>({ open: false, label: "", onConfirm: () => {} });
-
-  if (loading)
-    return (
-      <main className="p-4">
-        <div className="max-w-5xl mx-auto">Carregando…</div>
-      </main>
-    );
-  if (!cond)
+  // se não existe, retorna antes de declarar handlers
+  if (!cond) {
     return (
       <main className="p-4">
         <div className="max-w-5xl mx-auto space-y-3">
@@ -54,6 +38,75 @@ export default function CondominioPage() {
         </div>
       </main>
     );
+  }
+
+  // inputs e erros
+  const [idBloco, setIdBloco] = useState("");
+  const [idAptoPorBloco, setIdAptoPorBloco] = useState<Record<string, string>>(
+    {}
+  );
+  const [idCasa, setIdCasa] = useState("");
+
+  const [erroBloco, setErroBloco] = useState("");
+  const [erroAptoPorBloco, setErroAptoPorBloco] = useState<
+    Record<string, string>
+  >({});
+  const [erroCasa, setErroCasa] = useState("");
+
+  const [confirmDelete, setConfirmDelete] = useState<{
+    open: boolean;
+    label: string;
+    onConfirm: () => void;
+  }>({ open: false, label: "", onConfirm: () => {} });
+
+  // Handlers — podem usar cond!.id com segurança
+  function handleAddBloco() {
+    const id = idBloco.trim();
+    if (!id) {
+      setErroBloco("Informe o número do bloco.");
+      return;
+    }
+    const res = addBloco(cond!.id, id);
+    if (!res.ok) {
+      setErroBloco(res.error);
+      return;
+    }
+    setErroBloco("");
+    setIdBloco("");
+  }
+
+  function handleAddApto(blocoId: string) {
+    const idApto = (idAptoPorBloco[blocoId] || "").trim();
+    if (!idApto) {
+      setErroAptoPorBloco((old) => ({
+        ...old,
+        [blocoId]: "Informe o número do apartamento.",
+      }));
+      return;
+    }
+    const res = addApartamento(cond!.id, blocoId, idApto);
+    if (!res.ok) {
+      setErroAptoPorBloco((old) => ({ ...old, [blocoId]: res.error }));
+      return;
+    }
+    setErroAptoPorBloco((old) => ({ ...old, [blocoId]: "" }));
+    setIdAptoPorBloco((old) => ({ ...old, [blocoId]: "" }));
+  }
+
+  function handleAddCasa() {
+    const id = idCasa.trim();
+    if (!id) {
+      setErroCasa("Informe o número da casa.");
+      return;
+    }
+    const res = addCasa(cond!.id, id);
+    if (!res.ok) {
+      setErroCasa(res.error);
+      return;
+    }
+    setErroCasa("");
+    setIdCasa("");
+  }
 
   return (
     <main className="p-4">
@@ -75,22 +128,29 @@ export default function CondominioPage() {
             <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
               <input
                 value={idBloco}
-                onChange={(e) => setIdBloco(e.target.value)}
+                onChange={(e) => {
+                  setIdBloco(e.target.value);
+                  if (erroBloco) setErroBloco("");
+                }}
+                onKeyDown={(e) => e.key === "Enter" && handleAddBloco()}
                 placeholder="Nº do bloco (ex: 20)"
                 className="border rounded-lg px-3 py-2 w-full sm:flex-1"
               />
               <button
-                onClick={() => {
-                  const id = idBloco.trim();
-                  if (!id) return;
-                  addBloco(cond.id, id);
-                  setIdBloco("");
-                }}
-                className="px-4 py-2 rounded-lg bg-blue-600 text-white w-full sm:w-auto"
+                onClick={handleAddBloco}
+                disabled={!idBloco.trim()}
+                className={`px-4 py-2 rounded-lg text-white w-full sm:w-auto ${
+                  idBloco.trim()
+                    ? "bg-blue-600 hover:bg-blue-700"
+                    : "bg-blue-300 cursor-not-allowed"
+                }`}
               >
                 Adicionar bloco
               </button>
             </div>
+            {erroBloco && (
+              <div className="text-sm text-red-600">{erroBloco}</div>
+            )}
 
             {/* blocos */}
             <div className="space-y-6">
@@ -103,7 +163,7 @@ export default function CondominioPage() {
                         setConfirmDelete({
                           open: true,
                           label: `o Bloco ${b.id} do condomínio "${cond.nome}"`,
-                          onConfirm: () => removeBloco(cond.id, b.id),
+                          onConfirm: () => removeBloco(cond!.id, b.id),
                         })
                       }
                       className="text-red-600 text-sm hover:underline"
@@ -116,29 +176,42 @@ export default function CondominioPage() {
                   <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 mt-2">
                     <input
                       value={idAptoPorBloco[b.id] || ""}
-                      onChange={(e) =>
+                      onChange={(e) => {
                         setIdAptoPorBloco({
                           ...idAptoPorBloco,
                           [b.id]: e.target.value,
-                        })
+                        });
+                        if (erroAptoPorBloco[b.id])
+                          setErroAptoPorBloco((old) => ({
+                            ...old,
+                            [b.id]: "",
+                          }));
+                      }}
+                      onKeyDown={(e) =>
+                        e.key === "Enter" && handleAddApto(b.id)
                       }
                       placeholder="Nº do apto (ex: 101)"
                       className="border rounded-lg px-3 py-2 w-full sm:flex-1"
                     />
                     <button
-                      onClick={() => {
-                        const idApto = (idAptoPorBloco[b.id] || "").trim();
-                        if (!idApto) return;
-                        addApartamento(cond.id, b.id, idApto);
-                        setIdAptoPorBloco({ ...idAptoPorBloco, [b.id]: "" });
-                      }}
-                      className="px-4 py-2 rounded-lg bg-blue-600 text-white w-full sm:w-auto"
+                      onClick={() => handleAddApto(b.id)}
+                      disabled={!(idAptoPorBloco[b.id] || "").trim()}
+                      className={`px-4 py-2 rounded-lg text-white w-full sm:w-auto ${
+                        (idAptoPorBloco[b.id] || "").trim()
+                          ? "bg-blue-600 hover:bg-blue-700"
+                          : "bg-blue-300 cursor-not-allowed"
+                      }`}
                     >
                       Adicionar apto
                     </button>
                   </div>
+                  {erroAptoPorBloco[b.id] && (
+                    <div className="text-sm text-red-600">
+                      {erroAptoPorBloco[b.id]}
+                    </div>
+                  )}
 
-                  {/* apartamentos: full width */}
+                  {/* apartamentos */}
                   <div className="mt-4 space-y-4">
                     {b.apartamentos.map((a) => (
                       <div key={a.id} className="border rounded-lg p-3 w-full">
@@ -152,7 +225,7 @@ export default function CondominioPage() {
                                 open: true,
                                 label: `o Apartamento ${a.id} do bloco ${b.id} do condomínio "${cond.nome}"`,
                                 onConfirm: () =>
-                                  removeApartamento(cond.id, b.id, a.id),
+                                  removeApartamento(cond!.id, b.id, a.id),
                               })
                             }
                             className="text-red-600 text-xs hover:underline"
@@ -164,7 +237,7 @@ export default function CondominioPage() {
                         <ApartmentSection
                           apto={a}
                           onSave={(atualizado) =>
-                            upsertApartamento(cond.id, b.id, atualizado)
+                            upsertApartamento(cond!.id, b.id, atualizado)
                           }
                         />
                       </div>
@@ -180,24 +253,29 @@ export default function CondominioPage() {
             <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
               <input
                 value={idCasa}
-                onChange={(e) => setIdCasa(e.target.value)}
+                onChange={(e) => {
+                  setIdCasa(e.target.value);
+                  if (erroCasa) setErroCasa("");
+                }}
+                onKeyDown={(e) => e.key === "Enter" && handleAddCasa()}
                 placeholder="Nº da casa (ex: 12)"
                 className="border rounded-lg px-3 py-2 w-full sm:flex-1"
               />
               <button
-                onClick={() => {
-                  const id = idCasa.trim();
-                  if (!id) return;
-                  addCasa(cond.id, id);
-                  setIdCasa("");
-                }}
-                className="px-4 py-2 rounded-lg bg-blue-600 text-white w-full sm:w-auto"
+                onClick={handleAddCasa}
+                disabled={!idCasa.trim()}
+                className={`px-4 py-2 rounded-lg text-white w-full sm:w-auto ${
+                  idCasa.trim()
+                    ? "bg-blue-600 hover:bg-blue-700"
+                    : "bg-blue-300 cursor-not-allowed"
+                }`}
               >
                 Adicionar casa
               </button>
             </div>
+            {erroCasa && <div className="text-sm text-red-600">{erroCasa}</div>}
 
-            {/* casas: full width */}
+            {/* casas */}
             <div className="space-y-4">
               {(cond.casas ?? []).map((casa) => (
                 <div key={casa.id} className="border rounded-lg p-3 w-full">
@@ -208,7 +286,7 @@ export default function CondominioPage() {
                         setConfirmDelete({
                           open: true,
                           label: `a Casa ${casa.id} do condomínio "${cond.nome}"`,
-                          onConfirm: () => removeCasa(cond.id, casa.id),
+                          onConfirm: () => removeCasa(cond!.id, casa.id),
                         })
                       }
                       className="text-red-600 text-xs hover:underline"
@@ -220,7 +298,7 @@ export default function CondominioPage() {
                   <ApartmentSection
                     label="Casa"
                     apto={casa}
-                    onSave={(atualizado) => upsertCasa(cond.id, atualizado)}
+                    onSave={(atualizado) => upsertCasa(cond!.id, atualizado)}
                   />
                 </div>
               ))}
