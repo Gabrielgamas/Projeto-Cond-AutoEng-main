@@ -7,7 +7,6 @@ import React, {
 } from "react";
 import type {
   Condominio,
-  Bloco,
   Apartamento,
   ChecklistComodo,
   TabelaComodos,
