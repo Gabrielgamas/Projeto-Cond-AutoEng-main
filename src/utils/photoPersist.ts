@@ -9,43 +9,15 @@ type AppLike = { condominios?: Condominio[] };
 const isDataUrl = (v: string) => /^data:image\//i.test(v);
 
 /* -------------------------------------------------------------------------- */
-/*  1) MATERIALIZEPHOTOSTOKEYS: DataURL → @img:chave (salva no IndexedDB)     */
+/*  1) MATERIALIZEPHOTOSTOKEYS (NO-OP): mantém DataURLs como estão            */
+/*      -> removido uso de savePhoto                                          */
 /* -------------------------------------------------------------------------- */
 export async function materializePhotosToKeys<T extends AppLike>(
   data: T
 ): Promise<T> {
-  const copy: T = structuredClone(data);
-
-  const toKeysInPlace = async (fotos?: string[]) => {
-    if (!Array.isArray(fotos)) return;
-    for (let i = 0; i < fotos.length; i++) {
-      const v = fotos[i] ?? "";
-      if (!v) continue;
-      if (isDataUrl(v)) {
-        try {
-          const key = await savePhoto(v);
-          fotos[i] = key || "";
-        } catch {
-          fotos[i] = "";
-        }
-      }
-      // se já for @img:, mantém
-    }
-  };
-
-  const onUnidade = async (u?: Unidade) => {
-    if (!u) return;
-    await toKeysInPlace(u.fotos);
-  };
-
-  for (const cond of copy.condominios ?? []) {
-    for (const casa of cond.casas ?? []) await onUnidade(casa);
-    for (const bloco of cond.blocos ?? []) {
-      for (const ap of bloco.apartamentos ?? []) await onUnidade(ap);
-    }
-  }
-
-  return copy;
+  // Sem savePhoto disponível, não há como converter DataURL -> chave.
+  // Retornamos uma CÓPIA do estado, preservando DataURLs e chaves existentes.
+  return structuredClone(data);
 }
 
 /* -------------------------------------------------------------------------- */
@@ -59,6 +31,7 @@ export async function keysToDataUrls<T extends AppLike>(data: T): Promise<T> {
     for (let i = 0; i < fotos.length; i++) {
       const v = fotos[i] ?? "";
       if (!v) continue;
+      // se já for DataURL, mantém; se for chave @img:, resolve para DataURL
       if (!isDataUrl(v) && isPhotoKey(v)) {
         try {
           const dataUrl = await loadPhoto(v);
@@ -92,10 +65,9 @@ export async function exportTudoComImagens<T extends AppLike>(
   data: T,
   filename = "autoeng-backup-com-imagens.json"
 ): Promise<void> {
-  // gera cópia com todas as imagens resolvidas
+  // gera cópia com todas as imagens resolvidas para DataURL
   const copy = await keysToDataUrls(data);
 
-  // cria e baixa o arquivo JSON
   const blob = new Blob([JSON.stringify(copy, null, 2)], {
     type: "application/json",
   });
