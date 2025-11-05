@@ -1,6 +1,7 @@
 // src/components/Galeria9Fotos.tsx
 import React from "react";
 import { normalizeImageFile } from "../utils/images";
+import { getStorageBudget } from "../utils/storageBudget";
 import {
   isPhotoKey,
   loadPhoto,
@@ -57,9 +58,19 @@ export default function Galeria9Fotos({
 
   async function handlePick(idx: number, file: File | null) {
     if (!file || disabled) return;
-    const dataUrl = await normalizeImageFile(file);
-    const key = await storePhoto(dataUrl);
-    updateAt(idx, key);
+
+    // ⚠️ Checa uso de armazenamento antes de salvar a foto
+    const budget = await getStorageBudget();
+    if (budget && budget.quota && budget.pct > 0.8) {
+      alert(
+        "Armazenamento quase cheio. Exporte um backup e/ou apague algumas fotos antes de continuar."
+      );
+      return; // não salva a foto
+    }
+
+    const dataUrl = await normalizeImageFile(file); // sua compressão já existente
+    const key = await storePhoto(dataUrl); // salva no IndexedDB
+    updateAt(idx, key); // grava a chave no estado
   }
 
   async function handleRemove(idx: number) {
