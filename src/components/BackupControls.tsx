@@ -3,20 +3,6 @@ import { useAppState } from "../state/AppStateContext";
 import { readBackupFile, mergeAppData, isValidAppData } from "../utils/backup";
 import { exportTudoComImagens } from "../utils/photoPersist";
 
-function downloadJson(filename: string, data: unknown) {
-  const blob = new Blob([JSON.stringify(data, null, 2)], {
-    type: "application/json",
-  });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
-}
-
 export default function BackupControls() {
   const { data, setData, saveData } = useAppState();
 
