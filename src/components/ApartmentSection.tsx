@@ -91,8 +91,14 @@ export default function ApartmentSection({
           <section>
             <h4 className="font-semibold mb-2">Fotos (9/9)</h4>
             <Galeria9Fotos
-              value={apto.fotos}
-              onChange={(v) => update("fotos", v)}
+              value={apto.fotos} // array de 9 strings (chaves ou "")
+              onChange={(fotos) =>
+                onSave({
+                  // salve apenas as CHAVES no estado
+                  ...apto,
+                  fotos,
+                })
+              }
             />
           </section>
         </div>

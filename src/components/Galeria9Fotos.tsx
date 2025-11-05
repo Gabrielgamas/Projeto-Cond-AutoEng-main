@@ -1,170 +1,138 @@
-import React, { useRef } from "react";
+// src/components/Galeria9Fotos.tsx
+import React from "react";
 import { normalizeImageFile } from "../utils/images";
-import { canStoreBytes, approxBytesFromDataUrl } from "../utils/storage";
+import {
+  isPhotoKey,
+  loadPhoto,
+  storePhoto,
+  removePhoto,
+  type PhotoKey,
+} from "../storage/photoStore";
 
 type Props = {
-  /** Você pode passar value OU fotos (são equivalentes) */
-  value?: string[];
-  fotos?: string[];
+  value: string[]; // 9 posições: chave @img:... ou ""
   onChange: (v: string[]) => void;
-
-  maxWidth?: number; // default 1280
-  quality?: number; // default 0.82
+  showRemove?: boolean;
+  disabled?: boolean;
+  className?: string;
 };
 
 export default function Galeria9Fotos({
   value,
-  fotos: fotosProp,
   onChange,
-  maxWidth = 1280,
-  quality = 0.82,
+  showRemove = true,
+  disabled = false,
+  className = "",
 }: Props) {
-  // aceita value ou fotos; se nenhum vier, preenche 9 vazios
-  const fotos = (value ?? fotosProp ?? Array(9).fill("")) as string[];
-
-  const inputRef = useRef<HTMLInputElement | null>(null);
-
-  const setFoto = (idx: number, dataUrl: string) => {
-    const next = [...fotos];
-    next[idx] = dataUrl;
-    onChange(next);
-  };
-
-  const clearFoto = (idx: number) => {
-    const next = [...fotos];
-    next[idx] = "";
-    onChange(next);
-  };
-
-  async function handleSingleSelect(idx: number, file?: File) {
-    if (!file) return;
-    try {
-      const optimized = await normalizeImageFile(file, maxWidth, quality);
-
-      const ok = await canStoreBytes(approxBytesFromDataUrl(optimized));
-      if (!ok) {
-        alert(
-          "Espaço insuficiente para salvar esta foto. Exporte seus dados ou apague algumas fotos."
-        );
-        return;
-      }
-
-      setFoto(idx, optimized);
-    } catch (e) {
-      alert(e instanceof Error ? e.message : "Falha ao processar imagem.");
-    } finally {
-      if (inputRef.current) inputRef.current.value = "";
-    }
-  }
-
-  // multi-upload: preenche slots vazios
-
-  async function handleMultiSelect(files: FileList | null) {
-    if (!files || files.length === 0) return;
-    try {
-      const emptyIdxs = fotos
-        .map((v, i) => (v ? -1 : i))
-        .filter((i) => i >= 0)
-        .slice(0, files.length);
-
-      const next = [...fotos];
-      for (let j = 0; j < emptyIdxs.length; j++) {
-        const idx = emptyIdxs[j];
-        const file = files[j];
-        if (!file) break;
-        const optimized = await normalizeImageFile(file, maxWidth, quality);
-
-        const ok = await canStoreBytes(approxBytesFromDataUrl(optimized));
-        if (!ok) {
-          alert(
-            `Sem espaço para salvar a foto ${
-              j + 1
-            }. Dica: exporte seus dados e libere espaço.`
-          );
-          break;
-        }
-
-        next[idx] = optimized;
-      }
-      onChange(next);
-    } catch (e) {
-      alert(e instanceof Error ? e.message : "Falha ao processar imagens.");
-    } finally {
-      if (inputRef.current) inputRef.current.value = "";
-    }
-  }
-
-  return (
-    <div className="space-y-2">
-      {/* multi-upload */}
-      <div className="flex items-center gap-2">
-        <label className="px-3 py-2 border rounded-lg cursor-pointer">
-          Adicionar várias fotos
-          <input
-            ref={inputRef}
-            type="file"
-            accept="image/*"
-            multiple
-            className="hidden"
-            onChange={(e) => handleMultiSelect(e.target.files)}
-          />
-        </label>
-        <span className="text-sm text-gray-500">
-          Espaços livres: {fotos.filter((f) => !f).length}/9
-        </span>
-      </div>
-
-      {/* grade 3x3 */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-        {Array.from({ length: 9 }, (_, i) => (
-          <FotoItem
-            key={i}
-            idx={i}
-            src={fotos[i]}
-            onPick={(file) => handleSingleSelect(i, file)}
-            onRemove={() => clearFoto(i)}
-          />
-        ))}
-      </div>
-    </div>
+  const slots = React.useMemo(
+    () => Array.from({ length: 9 }, (_, i) => value[i] ?? ""),
+    [value]
   );
-}
 
-type FotoItemProps = {
-  idx: number;
-  src: string;
-  onPick: (file?: File) => void;
-  onRemove?: () => void; // ← deixa opcional, mas não vamos destruturar
-};
+  const [resolved, setResolved] = React.useState<string[]>(() =>
+    Array.from({ length: 9 }, () => "")
+  );
 
-function FotoItem({ idx, src, onPick }: FotoItemProps) {
-  const inputRef = React.useRef<HTMLInputElement | null>(null);
-  const handleClick = () => inputRef.current?.click();
+  // refs dos inputs
+  const inputRefs = React.useRef<Array<HTMLInputElement | null>>([]);
+
+  React.useEffect(() => {
+    let alive = true;
+    (async () => {
+      const arr = await Promise.all(
+        slots.map((k) => (k ? loadPhoto(k) : Promise.resolve("")))
+      );
+      if (alive) setResolved(arr);
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [slots]);
+
+  function updateAt(idx: number, newVal: string) {
+    const next = [...slots];
+    next[idx] = newVal;
+    onChange(next);
+  }
+
+  async function handlePick(idx: number, file: File | null) {
+    if (!file || disabled) return;
+    const dataUrl = await normalizeImageFile(file);
+    const key = await storePhoto(dataUrl);
+    updateAt(idx, key);
+  }
+
+  async function handleRemove(idx: number) {
+    if (disabled || !showRemove) return;
+    const current = slots[idx] ?? "";
+    if (isPhotoKey(current)) {
+      await removePhoto(current as PhotoKey);
+    }
+    updateAt(idx, "");
+  }
+
+  function openPicker(idx: number) {
+    if (disabled) return;
+    inputRefs.current[idx]?.click();
+  }
+
   return (
-    <div
-      className="relative aspect-[4/3] border rounded-md overflow-hidden cursor-pointer group"
-      onClick={handleClick}
-      title={src ? "Trocar foto" : "Adicionar foto"}
-    >
-      {src ? (
-        <img
-          src={src}
-          alt={`Foto ${idx + 1}`}
-          className="w-full h-full object-cover"
-        />
-      ) : (
-        <div className="w-full h-full flex items-center justify-center text-sm text-gray-500">
-          {`Foto ${idx + 1}`}
-        </div>
-      )}
+    <div className={`grid grid-cols-3 gap-2 ${className}`}>
+      {slots.map((_, idx) => {
+        const src = resolved[idx] || "";
+        return (
+          <div
+            key={idx}
+            className={`relative rounded-lg border border-gray-300 overflow-hidden group cursor-pointer ${
+              disabled ? "opacity-60 cursor-not-allowed" : "hover:shadow-md"
+            }`}
+            onClick={() => openPicker(idx)}
+          >
+            {src ? (
+              <img
+                src={src}
+                alt={`Foto ${idx + 1}`}
+                className="block w-full h-28 object-cover"
+                draggable={false}
+              />
+            ) : (
+              <div className="w-full h-28 flex items-center justify-center text-gray-400 select-none">
+                <span className="text-sm">Adicionar foto</span>
+              </div>
+            )}
 
-      <input
-        ref={inputRef}
-        type="file"
-        accept="image/*"
-        className="hidden"
-        onChange={(e) => onPick(e.target.files?.[0])}
-      />
+            {/* input real, escondido visualmente (sem display:none) */}
+            <input
+              ref={(el: HTMLInputElement | null) => {
+                // ← retorna void, não o 'el'
+                inputRefs.current[idx] = el;
+              }}
+              type="file"
+              accept="image/*"
+              className="absolute w-0.5 h-0.5 opacity-0 -z-10"
+              onChange={(e) => handlePick(idx, e.target.files?.[0] ?? null)}
+              onClick={(e) => {
+                // permite re-selecionar o mesmo arquivo
+                (e.target as HTMLInputElement).value = "";
+              }}
+            />
+
+            {showRemove && !disabled && src && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  void handleRemove(idx);
+                }}
+                className="absolute top-1 right-1 text-xs px-2 py-1 rounded bg-black/60 text-white opacity-0 group-hover:opacity-100 transition"
+                title="Remover foto"
+              >
+                Remover
+              </button>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }

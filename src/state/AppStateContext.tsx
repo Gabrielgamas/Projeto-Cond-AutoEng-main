@@ -1,3 +1,4 @@
+// src/state/AppStateContext.tsx
 import React, {
   createContext,
   useContext,
@@ -14,12 +15,13 @@ import type {
   Especificacao,
   CondominioTipo,
 } from "../types";
+import { materializePhotosToKeys } from "../utils/photoPersist";
 
 /* ============================= Persistência ============================= */
 
 const STORAGE_KEY = "autoeng-data";
 
-type AppState = {
+export type AppState = {
   schemaVersion: number;
   condominios: Condominio[];
 };
@@ -34,13 +36,25 @@ function loadState(): AppState {
   return { schemaVersion: 2, condominios: [] };
 }
 
+/** Converte DataURLs de fotos para chaves (@img:...) e grava no localStorage */
+async function saveStateAsync(s: AppState): Promise<void> {
+  try {
+    const toSave = await materializePhotosToKeys(s);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(toSave));
+  } catch (e) {
+    // evita tela branca caso a quota estoure por algum motivo
+    console.warn("Falha ao salvar estado (quota/localStorage):", e);
+  }
+}
+
+/** Wrapper para manter assinatura síncrona nos pontos de chamada */
 function saveState(s: AppState) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(s));
+  void saveStateAsync(s);
 }
 
 /* ============================ Helpers gerais ============================ */
 
-// normaliza textos para comparação (case-insensitive, sem acentos e espaços extras)
+// normaliza textos p/ comparação (case-insensitive, sem acento/esp. extras)
 const norm = (s: string) =>
   s
     .normalize("NFD")
@@ -113,19 +127,16 @@ type Ctx = {
   removeBloco: (condId: string, blocoId: string) => void;
 
   addApartamento: (condId: string, blocoId: string, idApto: string) => OpResult;
-  removeApartamento: (condId: string, blocoId: string, idApto: string) => void;
-
-  addCasa: (condId: string, idCasa: string) => OpResult;
-  removeCasa: (condId: string, idCasa: string) => void;
-
-  /** atualiza (ou insere) um apartamento existente */
   upsertApartamento: (
     condId: string,
     blocoId: string,
     apto: Apartamento
   ) => void;
-  /** atualiza (ou insere) uma casa existente */
-  upsertCasa: (condId: string, apto: Apartamento) => void;
+  removeApartamento: (condId: string, blocoId: string, idApto: string) => void;
+
+  addCasa: (condId: string, idCasa: string) => OpResult;
+  upsertCasa: (condId: string, casa: Apartamento) => void;
+  removeCasa: (condId: string, idCasa: string) => void;
 
   saveData: (d: AppState) => void;
 };
@@ -135,9 +146,22 @@ const AppStateContext = createContext<Ctx | null>(null);
 export function AppStateProvider({ children }: { children: React.ReactNode }) {
   const [data, setData] = useState<AppState>(() => loadState());
 
+  // Migração 1x: se houver DataURLs no JSON já salvo, converte para chaves
   useEffect(() => {
-    saveState(data);
-  }, [data]);
+    (async () => {
+      try {
+        const migrated = await materializePhotosToKeys(data);
+        // salva apenas se mudou
+        if (JSON.stringify(migrated) !== JSON.stringify(data)) {
+          setData(migrated);
+          await saveStateAsync(migrated);
+        }
+      } catch (e) {
+        console.warn("Migração inicial de fotos falhou:", e);
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const saveData = (d: AppState) => {
     setData(d);
@@ -155,7 +179,6 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
     let duplicated = false;
 
     setData((prev) => {
-      // checa no estado mais recente (prev)
       if (prev.condominios.some((c) => norm(c.nome) === key)) {
         duplicated = true;
         return prev;
@@ -166,7 +189,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
         nome,
         tipo,
         blocos: [],
-        casas: [], // sua estrutura já usa 'casas'; mantemos aqui
+        casas: [],
       });
       saveState(d);
       inserted = true;
@@ -184,7 +207,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
     setData((prev) => {
       const d = structuredClone(prev);
       d.condominios = d.condominios.filter((c) => c.id !== condId);
-      saveData(d);
+      saveState(d);
       return d;
     });
   }
@@ -209,6 +232,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
         error = `O bloco "${idBloco}" já existe neste condomínio.`;
         return prev;
       }
+
       (cond.blocos ??= []).push({ id: idBloco, apartamentos: [] });
       saveState(d);
       ok = true;
@@ -226,7 +250,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       const cond = d.condominios.find((c) => c.id === condId);
       if (!cond) return prev;
       cond.blocos = (cond.blocos ?? []).filter((b) => b.id !== blocoId);
-      saveData(d);
+      saveState(d);
       return d;
     });
   }
@@ -274,6 +298,27 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       : { ok: false, error: error ?? "Não foi possível adicionar." };
   }
 
+  function upsertApartamento(
+    condId: string,
+    blocoId: string,
+    apto: Apartamento
+  ) {
+    setData((prev) => {
+      const d = structuredClone(prev);
+      const cond = d.condominios.find((c) => c.id === condId);
+      if (!cond) return prev;
+      const bloco = (cond.blocos ?? []).find((b) => b.id === blocoId);
+      if (!bloco) return prev;
+
+      const idx = (bloco.apartamentos ?? []).findIndex((a) => a.id === apto.id);
+      if (idx >= 0) bloco.apartamentos[idx] = apto;
+      else bloco.apartamentos.push(apto);
+
+      saveState(d);
+      return d;
+    });
+  }
+
   function removeApartamento(condId: string, blocoId: string, idApto: string) {
     setData((prev) => {
       const d = structuredClone(prev);
@@ -286,8 +331,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       bloco.apartamentos = (bloco.apartamentos ?? []).filter(
         (a) => a.id !== idApto
       );
-
-      saveData(d);
+      saveState(d);
       return d;
     });
   }
@@ -308,8 +352,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       }
 
       const key = norm(idCasa);
-
-      if ((cond.casas ?? []).some((a: Apartamento) => norm(a.id) === key)) {
+      if ((cond.casas ?? []).some((a) => norm(a.id) === key)) {
         error = `A casa "${idCasa}" já existe neste condomínio.`;
         return prev;
       }
@@ -325,55 +368,29 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       : { ok: false, error: error ?? "Não foi possível adicionar." };
   }
 
-  function removeCasa(condId: string, idCasa: string) {
+  function upsertCasa(condId: string, casa: Apartamento) {
     setData((prev) => {
       const d = structuredClone(prev);
       const cond = d.condominios.find((c) => c.id === condId);
       if (!cond) return prev;
 
-      cond.casas = (cond.casas ?? []).filter(
-        (a: Apartamento) => a.id !== idCasa
-      );
-      saveData(d);
-      return d;
-    });
-  }
-
-  /* ======================= Upserts (editar/salvar) ======================== */
-
-  function upsertApartamento(
-    condId: string,
-    blocoId: string,
-    apto: Apartamento
-  ) {
-    setData((prev) => {
-      const d = structuredClone(prev);
-      const cond = d.condominios.find((c) => c.id === condId);
-      if (!cond) return prev;
-
-      const bloco = (cond.blocos ?? []).find((b) => b.id === blocoId);
-      if (!bloco) return prev;
-
-      const i = (bloco.apartamentos ?? []).findIndex((a) => a.id === apto.id);
-      if (i >= 0) bloco.apartamentos[i] = apto;
-      else bloco.apartamentos.push(apto);
+      const list = (cond.casas ??= []);
+      const idx = list.findIndex((a) => a.id === casa.id);
+      if (idx >= 0) list[idx] = casa;
+      else list.push(casa);
 
       saveState(d);
       return d;
     });
   }
 
-  function upsertCasa(condId: string, apto: Apartamento) {
+  function removeCasa(condId: string, idCasa: string) {
     setData((prev) => {
       const d = structuredClone(prev);
       const cond = d.condominios.find((c) => c.id === condId);
       if (!cond) return prev;
 
-      const arr: Apartamento[] = (cond.casas ??= []);
-      const i = arr.findIndex((a) => a.id === apto.id);
-      if (i >= 0) arr[i] = apto;
-      else arr.push(apto);
-
+      cond.casas = (cond.casas ?? []).filter((a) => a.id !== idCasa);
       saveState(d);
       return d;
     });
@@ -388,11 +405,11 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       addBloco,
       removeBloco,
       addApartamento,
+      upsertApartamento,
       removeApartamento,
       addCasa,
-      removeCasa,
-      upsertApartamento,
       upsertCasa,
+      removeCasa,
       saveData,
     }),
     [data]
