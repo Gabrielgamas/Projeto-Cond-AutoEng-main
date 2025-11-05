@@ -1,6 +1,8 @@
 /* eslint-disable @typescript-eslint/naming-convention */
 import jsPDF from "jspdf";
 import autoTable, { type CellHookData, type CellInput } from "jspdf-autotable";
+import { isPhotoKey, loadPhoto } from "../storage/photoStore";
+
 import type {
   Condominio,
   Apartamento,
@@ -56,6 +58,15 @@ async function loadPublicLogo(): Promise<string | undefined> {
 }
 
 /** ----------------- Helpers visuais ----------------- */
+
+async function resolveFotosToDataUrls(fotos: string[]): Promise<string[]> {
+  return Promise.all(
+    (fotos ?? [])
+      .slice(0, 9)
+      .map(async (f) => (isPhotoKey(f) ? await loadPhoto(f) : f || ""))
+  );
+}
+
 function topBar(doc: jsPDF) {
   doc.setFillColor(...NAVY);
   doc.rect(0, 0, PW, 6, "F");
@@ -791,7 +802,9 @@ export const generateCondominioPDF = async (
         .sort((a, b) => a.id.localeCompare(b.id, "pt-BR", { numeric: true }));
       for (const casa of casas) {
         try {
-          unitChecklistPage(doc, cond, casa, logo, "Casa");
+          const fotosData = await resolveFotosToDataUrls(casa.fotos ?? []);
+          const casaResolvida = { ...casa, fotos: fotosData };
+          unitChecklistPage(doc, cond, casaResolvida, logo, "Casa");
         } catch (e) {
           console.error(`Falha ao montar página da casa ${casa.id}:`, e);
         }
@@ -808,7 +821,16 @@ export const generateCondominioPDF = async (
 
         for (const apto of aptosOrdenados) {
           try {
-            unitChecklistPage(doc, cond, apto, logo, "Apartamento", bloco.id);
+            const fotosData = await resolveFotosToDataUrls(apto.fotos ?? []);
+            const aptoResolvido = { ...apto, fotos: fotosData };
+            unitChecklistPage(
+              doc,
+              cond,
+              aptoResolvido,
+              logo,
+              "Apartamento",
+              bloco.id
+            );
           } catch (e) {
             console.error(
               `Falha ao montar página do apto ${apto.id} do bloco ${bloco.id}:`,

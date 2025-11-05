@@ -1,6 +1,7 @@
 import React from "react";
 import { useAppState } from "../state/AppStateContext";
 import { readBackupFile, mergeAppData, isValidAppData } from "../utils/backup";
+import { exportTudoComImagens } from "../utils/photoPersist";
 
 function downloadJson(filename: string, data: unknown) {
   const blob = new Blob([JSON.stringify(data, null, 2)], {
@@ -28,16 +29,6 @@ export default function BackupControls() {
     overflow: "hidden",
     zIndex: -1,
   };
-
-  // EXPORTAR
-  function handleExport() {
-    const ts = new Date();
-    const pad = (n: number) => String(n).padStart(2, "0");
-    const stamp = `${ts.getFullYear()}-${pad(ts.getMonth() + 1)}-${pad(
-      ts.getDate()
-    )}_${pad(ts.getHours())}-${pad(ts.getMinutes())}`;
-    downloadJson(`autoeng-backup_${stamp}.json`, data);
-  }
 
   // IMPORTAR — ACRESCENTAR
   async function onAppendFile(e: React.ChangeEvent<HTMLInputElement>) {
@@ -80,7 +71,7 @@ export default function BackupControls() {
       {/* EXPORTAR */}
       <button
         type="button"
-        onClick={handleExport}
+        onClick={() => exportTudoComImagens(data)}
         className="px-3 py-2 rounded-lg bg-gray-800 hover:bg-gray-900 text-white"
         title="Exporta um arquivo .json com todos os dados"
       >

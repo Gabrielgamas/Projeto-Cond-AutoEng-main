@@ -1,61 +1,110 @@
-// src/utils/photoPersist.ts
-import type { Apartamento, Condominio } from "../types";
-import type { AppData } from "./backup"; // ajuste o caminho se AppData estiver noutro arquivo
-import { isPhotoKey, storePhoto } from "../storage/photoStore";
+import { isPhotoKey, loadPhoto } from "../storage/photoStore";
 
-/** Guard auxiliar para detectar DataURL */
-function isDataUrl(v: string): boolean {
-  return v.startsWith("data:image/");
-}
+/** Tipos mínimos para percorrer o estado */
+type Unidade = { fotos?: string[] };
+type Bloco = { apartamentos?: Unidade[] };
+type Condominio = { casas?: Unidade[]; blocos?: Bloco[] };
+type AppLike = { condominios?: Condominio[] };
 
-/** Lê a lista de casas de forma segura (se não existir, retorna []). */
-function readCasas(c: Condominio): Apartamento[] {
-  const rec = c as Record<string, unknown>;
-  const raw = rec["casas"];
-  return Array.isArray(raw) ? (raw as Apartamento[]) : [];
-}
+const isDataUrl = (v: string) => /^data:image\//i.test(v);
 
-/** Itera blocos/apartamentos e casas de um condomínio chamando 'fn' para cada unidade. */
-async function forEachUnidade(
-  cond: Condominio,
-  fn: (a: Apartamento) => Promise<void>
-): Promise<void> {
-  // blocos / apartamentos
-  for (const b of cond.blocos ?? []) {
-    for (const a of b.apartamentos ?? []) {
-      await fn(a);
+/* -------------------------------------------------------------------------- */
+/*  1) MATERIALIZEPHOTOSTOKEYS: DataURL → @img:chave (salva no IndexedDB)     */
+/* -------------------------------------------------------------------------- */
+export async function materializePhotosToKeys<T extends AppLike>(
+  data: T
+): Promise<T> {
+  const copy: T = structuredClone(data);
+
+  const toKeysInPlace = async (fotos?: string[]) => {
+    if (!Array.isArray(fotos)) return;
+    for (let i = 0; i < fotos.length; i++) {
+      const v = fotos[i] ?? "";
+      if (!v) continue;
+      if (isDataUrl(v)) {
+        try {
+          const key = await savePhoto(v);
+          fotos[i] = key || "";
+        } catch {
+          fotos[i] = "";
+        }
+      }
+      // se já for @img:, mantém
+    }
+  };
+
+  const onUnidade = async (u?: Unidade) => {
+    if (!u) return;
+    await toKeysInPlace(u.fotos);
+  };
+
+  for (const cond of copy.condominios ?? []) {
+    for (const casa of cond.casas ?? []) await onUnidade(casa);
+    for (const bloco of cond.blocos ?? []) {
+      for (const ap of bloco.apartamentos ?? []) await onUnidade(ap);
     }
   }
 
-  // casas
-  for (const a of readCasas(cond)) {
-    await fn(a);
-  }
+  return copy;
 }
 
-/**
- * Varre todas as unidades (aptos/casas) e garante que fotos sejam
- * chaves do IndexedDB (armazenando DataURLs quando necessário).
- * Retorna uma cópia do AppData com as fotos substituídas por chaves.
- */
-export async function materializePhotosToKeys(data: AppData): Promise<AppData> {
-  const copy: AppData = structuredClone(data);
+/* -------------------------------------------------------------------------- */
+/*  2) KEYSTODATAURLS: @img:chave → DataURL (para PDF/exports completos)      */
+/* -------------------------------------------------------------------------- */
+export async function keysToDataUrls<T extends AppLike>(data: T): Promise<T> {
+  const copy: T = structuredClone(data);
 
-  const processUnidade = async (a: Apartamento) => {
-    if (!a?.fotos) return;
-    for (let i = 0; i < a.fotos.length; i++) {
-      const v = a.fotos[i] ?? "";
-      if (v && !isPhotoKey(v) && isDataUrl(v)) {
-        // salva no IndexedDB e troca DataURL por chave
-        const key = await storePhoto(v);
-        a.fotos[i] = key;
+  const toDataUrlsInPlace = async (fotos?: string[]) => {
+    if (!Array.isArray(fotos)) return;
+    for (let i = 0; i < fotos.length; i++) {
+      const v = fotos[i] ?? "";
+      if (!v) continue;
+      if (!isDataUrl(v) && isPhotoKey(v)) {
+        try {
+          const dataUrl = await loadPhoto(v);
+          fotos[i] = dataUrl || "";
+        } catch {
+          fotos[i] = "";
+        }
       }
     }
   };
 
-  for (const cond of copy.condominios) {
-    await forEachUnidade(cond, processUnidade);
+  const onUnidade = async (u?: Unidade) => {
+    if (!u) return;
+    await toDataUrlsInPlace(u.fotos);
+  };
+
+  for (const cond of copy.condominios ?? []) {
+    for (const casa of cond.casas ?? []) await onUnidade(casa);
+    for (const bloco of cond.blocos ?? []) {
+      for (const ap of bloco.apartamentos ?? []) await onUnidade(ap);
+    }
   }
 
   return copy;
+}
+
+/* -------------------------------------------------------------------------- */
+/*  3) EXPORTTUDOCOMIMAGENS: exporta JSON com todas as imagens embutidas      */
+/* -------------------------------------------------------------------------- */
+export async function exportTudoComImagens<T extends AppLike>(
+  data: T,
+  filename = "autoeng-backup-com-imagens.json"
+): Promise<void> {
+  // gera cópia com todas as imagens resolvidas
+  const copy = await keysToDataUrls(data);
+
+  // cria e baixa o arquivo JSON
+  const blob = new Blob([JSON.stringify(copy, null, 2)], {
+    type: "application/json",
+  });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
 }
