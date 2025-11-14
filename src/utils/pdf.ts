@@ -229,90 +229,131 @@ function addUnidadesSelecionadasPage(
   cond: Condominio,
   logo?: string
 ) {
-  doc.addPage("a4", "landscape");
-  topBar(doc);
-
-  const titulo =
-    cond.tipo === "CASAS" ? "Casas Selecionadas" : "Apartamentos Selecionados";
-  sectionTitle(doc, titulo, 60);
-
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(11);
-
-  const colW = (PW - 2 * MARGIN - 16) / 3;
-  let colX = MARGIN + 8;
-  let y = 104;
+  // Versão robusta que distribui os blocos/emparelha em colunas com paginação correta.
+  const TITLE_Y = 60;
+  const HEADER_Y = 90;
+  const usableW = PW - 2 * MARGIN - 16;
+  const cols = 3; // numero de colunas por página
+  const colGap = 8;
+  const colW = (usableW - colGap * (cols - 1)) / cols;
   const lineH = 9;
+  const topBarHeight = 6;
 
+  // Gera as linhas: "Bloco 145: 01 02 03 04"
+  const blocos = (cond.blocos ?? [])
+    .slice()
+    .sort((a, b) => a.id.localeCompare(b.id, "pt-BR", { numeric: true }));
+  const entries: string[] = blocos.map((b) => {
+    const aptos = (b.apartamentos ?? [])
+      .slice()
+      .sort((x, y) => x.id.localeCompare(y.id, "pt-BR", { numeric: true }))
+      .map((x) => x.id);
+    return `Bloco ${b.id}: ${aptos.join("   ")}`;
+  });
+
+  // header + footer helper
+  function renderHeader(isContinuation = false) {
+    doc.addPage("a4", "landscape");
+    topBar(doc);
+    const title =
+      cond.tipo === "CASAS"
+        ? "Casas Selecionadas"
+        : "Apartamentos Selecionados";
+    sectionTitle(
+      doc,
+      isContinuation ? `${title} (continuação)` : title,
+      TITLE_Y
+    );
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(11);
+    doc.text(
+      cond.tipo === "CASAS" ? "Casas:" : "Blocos / Apartamentos:",
+      MARGIN + 8,
+      HEADER_Y
+    );
+    footerLogo(doc, logo);
+  }
+
+  // Se for casas, simplificamos: mostramos ids em colunas também
   if (cond.tipo === "CASAS") {
     const casas = (cond.casas ?? [])
       .slice()
       .sort((a, b) => a.id.localeCompare(b.id, "pt-BR", { numeric: true }));
+    const ids = casas.map((c) => String(c.id));
+    // quantas linhas cabem por coluna (altura disponível: do HEADER_Y até PH - margem inferior)
+    const startY = HEADER_Y + 10;
+    const availH = PH - MARGIN - startY;
+    const linesPerCol = Math.max(1, Math.floor(availH / lineH));
+    const perCol = Math.ceil(ids.length / cols);
 
-    doc.text("Casas:", MARGIN + 8, 90);
+    renderHeader(false);
     doc.setFont("helvetica", "normal");
+    doc.setFontSize(11);
 
-    const ids = casas.map((c) => c.id);
+    let colIndex = 0;
+    let y = startY;
+
     for (let i = 0; i < ids.length; i++) {
-      if (y > PH - 30) {
-        y = 104;
-        colX += colW;
-      }
-      doc.text(String(ids[i]), colX, y);
+      const colX = MARGIN + 8 + colIndex * (colW + colGap);
+      doc.text(ids[i], colX, y);
       y += lineH;
 
-      if (colX > MARGIN + 8 + 2 * colW && y > PH - 30 && i < ids.length - 1) {
-        doc.addPage("a4", "landscape");
-        topBar(doc);
-        sectionTitle(doc, `${titulo} (continuação)`, 60);
-        doc.setFont("helvetica", "normal");
-        colX = MARGIN + 8;
-        y = 104;
+      // se a coluna encheu
+      if ((i + 1) % perCol === 0) {
+        colIndex++;
+        y = startY;
+      }
+
+      // se ultrapassar a última coluna -> nova página
+      if (colIndex >= cols && i < ids.length - 1) {
+        renderHeader(true);
+        colIndex = 0;
+        y = startY;
       }
     }
-  } else {
-    // BLOCOS + APARTAMENTOS
-    const blocos = cond.blocos
-      .slice()
-      .sort((a, b) => a.id.localeCompare(b.id, "pt-BR", { numeric: true }));
-
-    doc.text("Blocos / Apartamentos:", MARGIN + 8, 90);
-    doc.setFont("helvetica", "normal");
-
-    blocos.forEach((b, idx) => {
-      const aptos = b.apartamentos
-        .slice()
-        .sort((a, b2) => a.id.localeCompare(b2.id, "pt-BR", { numeric: true }));
-      const aptosStr = aptos.map((a) => a.id).join("   ");
-
-      if (y > PH - 30) {
-        y = 104;
-        colX += colW;
-      }
-      const blocoLabel = `Bloco ${b.id}:`;
-      doc.setFont("helvetica", "bold");
-      doc.text(blocoLabel, colX, y);
-      doc.setFont("helvetica", "normal");
-      doc.text(aptosStr, colX + doc.getTextWidth(blocoLabel) + 2, y);
-
-      y += lineH;
-
-      if (
-        colX > MARGIN + 8 + 2 * colW &&
-        y > PH - 30 &&
-        idx < blocos.length - 1
-      ) {
-        doc.addPage("a4", "landscape");
-        topBar(doc);
-        sectionTitle(doc, `${titulo} (continuação)`, 60);
-        doc.setFont("helvetica", "normal");
-        colX = MARGIN + 8;
-        y = 104;
-      }
-    });
+    return;
   }
 
-  footerLogo(doc, logo);
+  // Para blocos/apartamentos: distribuímos entries pelas colunas e páginas
+  // Calcula quantas linhas cabem por coluna por página:
+  const startY = HEADER_Y + 10;
+  const availH = PH - MARGIN - startY;
+  const linesPerColumn = Math.max(1, Math.floor(availH / lineH));
+
+  // Quantas entradas por página (cols * linesPerColumn)
+  const perPage = cols * linesPerColumn;
+  let pageIndex = 0;
+  let globalIndex = 0;
+
+  // Enquanto houver entradas, renderiza página
+  while (globalIndex < entries.length) {
+    const isCont = pageIndex > 0;
+    renderHeader(isCont);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(11);
+
+    // slice de entradas desta página
+    const slice = entries.slice(globalIndex, globalIndex + perPage);
+    // distribuímos verticalmente: cada coluna terá até linesPerColumn lines
+    for (let c = 0; c < cols; c++) {
+      const colX = MARGIN + 8 + c * (colW + colGap);
+      let y = startY;
+      for (let r = 0; r < linesPerColumn; r++) {
+        const idx = c * linesPerColumn + r;
+        if (idx >= slice.length) break;
+        const text = slice[idx];
+        // wrap horizontalmente se for muito longo
+        const wrapped = doc.splitTextToSize(text, colW - 4);
+        // se wrapped tiver mais de 1 linha, desenha e avança y de acordo
+        doc.text(wrapped, colX, y);
+        y += wrapped.length * (lineH / 1.1); // ajuste vertical para múltiplas linhas
+      }
+    }
+
+    // avança globalIndex e página
+    globalIndex += perPage;
+    pageIndex++;
+  }
 }
 
 function addConsideracoesPage(doc: jsPDF, logo?: string) {
