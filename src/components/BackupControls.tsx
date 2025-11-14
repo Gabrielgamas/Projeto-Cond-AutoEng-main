@@ -6,7 +6,6 @@ import { exportTudoComImagens } from "../utils/photoPersist";
 export default function BackupControls() {
   const { data, setData, saveData } = useAppState();
 
-  // estilo “visualmente escondido”, mas NÃO display:none (compatibilidade iOS/Safari)
   const hiddenFileStyle: React.CSSProperties = {
     position: "absolute",
     width: 0.1,
@@ -16,11 +15,10 @@ export default function BackupControls() {
     zIndex: -1,
   };
 
-  // IMPORTAR — ACRESCENTAR
   async function onAppendFile(e: React.ChangeEvent<HTMLInputElement>) {
     try {
       const file = e.target.files?.[0];
-      // limpa pra permitir escolher o MESMO arquivo novamente
+
       e.target.value = "";
       if (!file) return;
 
@@ -35,7 +33,6 @@ export default function BackupControls() {
     }
   }
 
-  // IMPORTAR — SUBSTITUIR
   async function onReplaceFile(e: React.ChangeEvent<HTMLInputElement>) {
     try {
       const file = e.target.files?.[0];
@@ -54,7 +51,6 @@ export default function BackupControls() {
 
   return (
     <div className="flex items-center gap-2">
-      {/* EXPORTAR */}
       <button
         type="button"
         onClick={() => exportTudoComImagens(data)}
@@ -64,7 +60,6 @@ export default function BackupControls() {
         Exportar
       </button>
 
-      {/* ACRESCENTAR */}
       <label
         htmlFor="append-json"
         className="px-3 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer"
@@ -80,7 +75,6 @@ export default function BackupControls() {
         onChange={onAppendFile}
       />
 
-      {/* SUBSTITUIR */}
       <label
         htmlFor="replace-json"
         className="px-3 py-2 rounded-lg bg-red-600 hover:bg-red-700 text-white cursor-pointer"

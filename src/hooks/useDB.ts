@@ -25,7 +25,6 @@ export function useDB() {
   });
   const [loaded, setLoaded] = useState(false);
 
-  // Carrega ao iniciar
   useEffect(() => {
     (async () => {
       const stored = await get<AppState>(STORAGE_KEY);
@@ -34,16 +33,14 @@ export function useDB() {
     })();
   }, []);
 
-  // Salva com debounce quando data muda
   useDebouncedEffect(() => set(STORAGE_KEY, data), [data], 400);
 
-  // Helpers CRUD (condomínio / bloco / apartamento)
   const api = useMemo(() => {
     function addCondominio(nome: string) {
       const novo: Condominio = {
         id: crypto.randomUUID(),
         nome,
-        tipo: "BLOCOS", // ✅ adicione isto
+        tipo: "BLOCOS",
         blocos: [],
       };
       setData((prev) => ({
@@ -72,7 +69,7 @@ export function useDB() {
         ...prev,
         condominios: prev.condominios.map((c) => {
           if (c.id !== condoId) return c;
-          if (c.blocos.find((b) => b.id === blocoId)) return c; // evita duplicado
+          if (c.blocos.find((b) => b.id === blocoId)) return c;
           const novo: Bloco = { id: blocoId, apartamentos: [] };
           return { ...c, blocos: [...c.blocos, novo] };
         }),

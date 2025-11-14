@@ -12,7 +12,6 @@ import type {
   Especificacao,
 } from "../types";
 
-/** -------- Declaration merging: propriedade que o plugin anexa -------- */
 declare module "jspdf" {
   interface jsPDF {
     lastAutoTable?: { finalY: number };
@@ -20,15 +19,14 @@ declare module "jspdf" {
 }
 /* eslint-enable @typescript-eslint/naming-convention */
 
-/** ----------------- Constantes de layout (A4 paisagem) ----------------- */
-const PW = 297; // width (mm)
-const PH = 210; // height (mm)
+const PW = 297;
+const PH = 210;
 const MARGIN = 12;
 const SITUACAO_COL_W = 28;
 
 type RGB = [number, number, number];
-const NAVY: RGB = [20, 35, 60]; // #14233C
-const ORANGE: RGB = [245, 161, 25]; // #F5A119
+const NAVY: RGB = [20, 35, 60];
+const ORANGE: RGB = [245, 161, 25];
 const GRAY: RGB = [90, 90, 90];
 
 const getLastY = (doc: jsPDF) => doc.lastAutoTable?.finalY ?? 0;
@@ -39,7 +37,6 @@ const fmtDate = (d: Date) =>
     year: "numeric",
   });
 
-/** ----------------- Logo: carregamento robusto (JPEG/PNG) ----------------- */
 async function loadPublicLogo(): Promise<string | undefined> {
   try {
     const response = await fetch("/logo.png");
@@ -56,8 +53,6 @@ async function loadPublicLogo(): Promise<string | undefined> {
     return undefined;
   }
 }
-
-/** ----------------- Helpers visuais ----------------- */
 
 async function resolveFotosToDataUrls(fotos: string[]): Promise<string[]> {
   return Promise.all(
@@ -92,7 +87,6 @@ function footerLogo(doc: jsPDF, logoDataUrl?: string) {
   }
 }
 
-/** Tarja curta à esquerda + título (sem sobrepor texto) */
 function sectionTitle(doc: jsPDF, title: string, y: number) {
   const barW = 26;
   const gap = 12;
@@ -105,7 +99,6 @@ function sectionTitle(doc: jsPDF, title: string, y: number) {
   doc.setTextColor(0, 0, 0);
 }
 
-/** ----------------- Páginas institucionais ----------------- */
 function addCoverPage(doc: jsPDF, cond: Condominio, logo?: string) {
   topBar(doc);
 
@@ -122,11 +115,9 @@ function addCoverPage(doc: jsPDF, cond: Condominio, logo?: string) {
   doc.setFontSize(36);
   doc.text(`Condomínio ${cond.nome}`, x, y1 + 45);
 
-  // traço pequeno
   doc.setFillColor(...NAVY);
   doc.rect(x, y1 + 55, 25, 6, "F");
 
-  // assinatura + data
   doc.setTextColor(0, 0, 0);
   doc.setFont("helvetica", "normal");
   doc.setFontSize(12);
@@ -223,13 +214,11 @@ function addMetodologiaPage(doc: jsPDF, logo?: string) {
   footerLogo(doc, logo);
 }
 
-/** -------- “Unidades Selecionadas” (blocos/apartamentos ou casas) -------- */
 function addUnidadesSelecionadasPage(
   doc: jsPDF,
   cond: Condominio,
   logo?: string
 ) {
-  // Versão robusta que distribui os blocos/emparelha em colunas com paginação correta.
   const TITLE_Y = 60;
   const HEADER_Y = 90;
   const usableW = PW - 2 * MARGIN - 16;
@@ -239,7 +228,6 @@ function addUnidadesSelecionadasPage(
   const lineH = 9;
   const topBarHeight = 6;
 
-  // Gera as linhas: "Bloco 145: 01 02 03 04"
   const blocos = (cond.blocos ?? [])
     .slice()
     .sort((a, b) => a.id.localeCompare(b.id, "pt-BR", { numeric: true }));
@@ -251,7 +239,6 @@ function addUnidadesSelecionadasPage(
     return `Bloco ${b.id}: ${aptos.join("   ")}`;
   });
 
-  // header + footer helper
   function renderHeader(isContinuation = false) {
     doc.addPage("a4", "landscape");
     topBar(doc);
@@ -274,13 +261,12 @@ function addUnidadesSelecionadasPage(
     footerLogo(doc, logo);
   }
 
-  // Se for casas, simplificamos: mostramos ids em colunas também
   if (cond.tipo === "CASAS") {
     const casas = (cond.casas ?? [])
       .slice()
       .sort((a, b) => a.id.localeCompare(b.id, "pt-BR", { numeric: true }));
     const ids = casas.map((c) => String(c.id));
-    // quantas linhas cabem por coluna (altura disponível: do HEADER_Y até PH - margem inferior)
+
     const startY = HEADER_Y + 10;
     const availH = PH - MARGIN - startY;
     const linesPerCol = Math.max(1, Math.floor(availH / lineH));
@@ -298,13 +284,11 @@ function addUnidadesSelecionadasPage(
       doc.text(ids[i], colX, y);
       y += lineH;
 
-      // se a coluna encheu
       if ((i + 1) % perCol === 0) {
         colIndex++;
         y = startY;
       }
 
-      // se ultrapassar a última coluna -> nova página
       if (colIndex >= cols && i < ids.length - 1) {
         renderHeader(true);
         colIndex = 0;
@@ -314,27 +298,22 @@ function addUnidadesSelecionadasPage(
     return;
   }
 
-  // Para blocos/apartamentos: distribuímos entries pelas colunas e páginas
-  // Calcula quantas linhas cabem por coluna por página:
   const startY = HEADER_Y + 10;
   const availH = PH - MARGIN - startY;
   const linesPerColumn = Math.max(1, Math.floor(availH / lineH));
 
-  // Quantas entradas por página (cols * linesPerColumn)
   const perPage = cols * linesPerColumn;
   let pageIndex = 0;
   let globalIndex = 0;
 
-  // Enquanto houver entradas, renderiza página
   while (globalIndex < entries.length) {
     const isCont = pageIndex > 0;
     renderHeader(isCont);
     doc.setFont("helvetica", "normal");
     doc.setFontSize(11);
 
-    // slice de entradas desta página
     const slice = entries.slice(globalIndex, globalIndex + perPage);
-    // distribuímos verticalmente: cada coluna terá até linesPerColumn lines
+
     for (let c = 0; c < cols; c++) {
       const colX = MARGIN + 8 + c * (colW + colGap);
       let y = startY;
@@ -342,15 +321,14 @@ function addUnidadesSelecionadasPage(
         const idx = c * linesPerColumn + r;
         if (idx >= slice.length) break;
         const text = slice[idx];
-        // wrap horizontalmente se for muito longo
+
         const wrapped = doc.splitTextToSize(text, colW - 4);
-        // se wrapped tiver mais de 1 linha, desenha e avança y de acordo
+
         doc.text(wrapped, colX, y);
-        y += wrapped.length * (lineH / 1.1); // ajuste vertical para múltiplas linhas
+        y += wrapped.length * (lineH / 1.1);
       }
     }
 
-    // avança globalIndex e página
     globalIndex += perPage;
     pageIndex++;
   }
@@ -394,7 +372,6 @@ function addConclusaoPage(doc: jsPDF, logo?: string) {
   footerLogo(doc, logo);
 }
 
-/** ----------------- Tabelas com ✓ / ✗ ----------------- */
 const tableBase = {
   styles: { fontSize: 9, cellPadding: 2, lineColor: 120, lineWidth: 0.25 },
   headStyles: {
@@ -442,7 +419,6 @@ function tableComodos(
     "Tensão e Corrente",
   ];
 
-  // ✅ sem "any"
   const body: CellInput[][] = (
     Object.entries(comodos) as [keyof TabelaComodos, ChecklistComodo][]
   ).map(([room, checklist]) => [room, ...COLS.map((c) => !!checklist[c])]);
@@ -498,7 +474,6 @@ function tableQuadro(
     margin: { left: MARGIN, right: PW - (MARGIN + width) },
     tableWidth: width,
 
-    // ➜ mesma largura sempre para a coluna “Situação”
     columnStyles: {
       0: { cellWidth: width - SITUACAO_COL_W },
       1: { cellWidth: SITUACAO_COL_W, halign: "center" as const },
@@ -541,7 +516,6 @@ function tableEspecificacoes(
     margin: { left: MARGIN, right: PW - (MARGIN + width) },
     tableWidth: width,
 
-    // ➜ usa o MESMO valor da função acima
     columnStyles: {
       0: { cellWidth: width - SITUACAO_COL_W },
       1: { cellWidth: SITUACAO_COL_W, halign: "center" as const },
@@ -564,7 +538,6 @@ function tableEspecificacoes(
   return getLastY(doc);
 }
 
-/** ----------------- Fotos 3×3 (direita) ----------------- */
 function photosGridRight(
   doc: jsPDF,
   fotos: string[],
@@ -572,7 +545,6 @@ function photosGridRight(
   areaY: number,
   areaW: number
 ) {
-  // Tarja
   doc.setFillColor(...NAVY);
   doc.rect(areaX, areaY, areaW, 8, "F");
   doc.setTextColor(255, 255, 255);
@@ -630,27 +602,23 @@ function photosGridRight(
   }
 }
 
-/** ----------------- Observações (duas colunas, com checkbox centralizado) ----------------- */
 function observacoesBox2Cols(
   doc: jsPDF,
   apto: Apartamento,
   startY: number
 ): number {
-  // ====== ajustes rápidos ======
-  const TITLE_H = 8; // altura da tarja azul "Observações"
-  const COL_GAP = 0; // gap entre colunas
-  const LINE_H = 10; // altura por item
-  const BOX_SIZE = 4; // tamanho do "checkbox"
-  const BOX_LEFT_PAD = 6; // distância da borda até o checkbox
-  const TEXT_GAP = 3; // espaço entre checkbox e texto
-  const FONT_SIZE = 10; // mesmo tamanho usado no texto
-  const BASELINE_ADJ = 1.5; // ajuste fino p/ centralizar (3.0–4.0 com fs=10)
-  // =============================
+  const TITLE_H = 8;
+  const COL_GAP = 0;
+  const LINE_H = 10;
+  const BOX_SIZE = 4;
+  const BOX_LEFT_PAD = 6;
+  const TEXT_GAP = 3;
+  const FONT_SIZE = 10;
+  const BASELINE_ADJ = 1.5;
 
   const totalW = PW - 2 * MARGIN;
   const colW = (totalW - COL_GAP) / 2;
 
-  // título
   doc.setFillColor(...NAVY);
   doc.rect(MARGIN, startY, totalW, TITLE_H, "F");
   doc.setTextColor(255, 255, 255);
@@ -661,16 +629,13 @@ function observacoesBox2Cols(
 
   const yTop = startY + TITLE_H;
 
-  // área disponível nesta página
   const availH = PH - MARGIN - yTop;
   const contentH = Math.max(20, availH);
 
-  // molduras
   doc.setDrawColor(0);
   doc.rect(MARGIN, yTop, colW, contentH);
   doc.rect(MARGIN + colW + COL_GAP, yTop, colW, contentH);
 
-  // capacidade desta página
   const linesPerCol = Math.max(1, Math.floor((contentH - 6) / LINE_H));
   const erros = apto.erros ?? [];
   const capThisPage = linesPerCol * 2;
@@ -678,7 +643,6 @@ function observacoesBox2Cols(
   const pageItems = erros.slice(0, capThisPage);
   const restItems = erros.slice(capThisPage);
 
-  // desenha itens de uma coluna (sem numeração; com checkbox)
   const drawItems = (items: typeof erros, x: number) => {
     let y = yTop + 7;
     for (let i = 0; i < items.length; i++) {
@@ -691,19 +655,16 @@ function observacoesBox2Cols(
         e.item ? ` (${e.item})` : "",
       ].join("");
 
-      // checkbox centralizado na vertical em relação à linha do texto
       const boxTop = y - BASELINE_ADJ - BOX_SIZE / 2;
       doc.setDrawColor(90);
       doc.rect(x + BOX_LEFT_PAD, boxTop, BOX_SIZE, BOX_SIZE);
 
-      // texto
       doc.setFont("helvetica", "normal");
       doc.setFontSize(FONT_SIZE);
       const textX = x + BOX_LEFT_PAD + BOX_SIZE + TEXT_GAP;
       const wrapped = doc.splitTextToSize(txt, colW - (textX - x) - 4);
       doc.text(wrapped, textX, y);
 
-      // linha guia (opcional)
       doc.setDrawColor(200);
       doc.line(x, y + 2.8, x + colW, y + 2.8);
 
@@ -712,16 +673,14 @@ function observacoesBox2Cols(
     }
   };
 
-  // esquerda
   drawItems(
     pageItems.slice(0, Math.min(linesPerCol, pageItems.length)),
     MARGIN
   );
-  // direita
+
   const rightSlice = pageItems.slice(linesPerCol);
   drawItems(rightSlice, MARGIN + colW + COL_GAP);
 
-  // paginação se sobrar itens
   if (restItems.length > 0) {
     doc.addPage("a4", "landscape");
     doc.setFillColor(...NAVY);
@@ -732,7 +691,6 @@ function observacoesBox2Cols(
   return yTop + contentH;
 }
 
-/** ----------------- Página por unidade (apto/casa) ----------------- */
 function unitChecklistPage(
   doc: jsPDF,
   _cond: Condominio,
@@ -743,7 +701,6 @@ function unitChecklistPage(
 ) {
   doc.addPage("a4", "landscape");
 
-  // logo topo direita
   if (logo) {
     const w = 15;
     const h = w;
@@ -761,7 +718,6 @@ function unitChecklistPage(
     }
   }
 
-  // Título centralizado com partes coloridas
   doc.setFont("helvetica", "bold");
   doc.setFontSize(18);
 
@@ -800,17 +756,14 @@ function unitChecklistPage(
 
   doc.setTextColor(0, 0, 0);
 
-  // layout 2 colunas
   const usableWidth = PW - 2 * MARGIN;
   const halfWidth = usableWidth / 2 - 3;
   const leftW = halfWidth;
   const rightX = MARGIN + halfWidth + 6;
   const rightW = halfWidth;
 
-  // fotos à direita
   photosGridRight(doc, unidade.fotos, rightX, 18, rightW);
 
-  // tabelas à esquerda
   let y = tableComodos(doc, unidade.comodos, 36, leftW);
   y = tableQuadro(doc, unidade.quadro, y + 6, leftW);
   y = tableEspecificacoes(doc, unidade.especificacoes, y + 6, leftW);
@@ -818,17 +771,14 @@ function unitChecklistPage(
   observacoesBox2Cols(doc, unidade, obsY);
 }
 
-/** ----------------- API pública ----------------- */
 export const generateCondominioPDF = async (
   cond: Condominio
 ): Promise<void> => {
-  // cria o documento já no formato A4 horizontal
   const doc = new jsPDF({ unit: "mm", format: "a4", orientation: "landscape" });
 
   try {
     const logo = await loadPublicLogo();
 
-    // páginas institucionais
     addCoverPage(doc, cond, logo);
     addIndexPage(doc, cond, logo);
     addObjetivoPage(doc, cond, logo);
@@ -836,7 +786,6 @@ export const generateCondominioPDF = async (
     addMetodologiaPage(doc, logo);
     addUnidadesSelecionadasPage(doc, cond, logo);
 
-    // páginas por unidade (apto/casa)
     if (cond.tipo === "CASAS") {
       const casas = (cond.casas ?? [])
         .slice()
@@ -882,7 +831,6 @@ export const generateCondominioPDF = async (
       }
     }
 
-    // considerações e conclusão
     addConsideracoesPage(doc, logo);
     addConclusaoPage(doc, logo);
 
@@ -893,7 +841,6 @@ export const generateCondominioPDF = async (
   }
 };
 
-/** ----------------- Utils ----------------- */
 function sanitizeFileName(s: string) {
   return s.replace(/[\\/:*?"<>|]+/g, "_").trim() || "relatorio";
 }

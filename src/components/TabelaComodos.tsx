@@ -50,7 +50,6 @@ export default function TabelaComodos({ value, onChange }: Props) {
 
               {COLS.map((c) => (
                 <td key={c as string} className="p-2 text-center align-middle">
-                  {/* Se ToggleChip não aceitar className, mantenha o wrapper */}
                   <div className="inline-flex items-center justify-center mx-auto">
                     <ToggleChip
                       label={`${r} - ${c}`}

@@ -50,11 +50,11 @@ export type Condominio = {
   id: string;
   nome: string;
   tipo: CondominioTipo;
-  blocos: Bloco[]; // usado quando tipo === "BLOCOS"
-  casas?: Apartamento[]; // usado quando tipo === "CASAS"
+  blocos: Bloco[];
+  casas?: Apartamento[];
 };
 
 export type AppState = {
-  schemaVersion: number; // 2+
+  schemaVersion: number;
   condominios: Condominio[];
 };

@@ -1,4 +1,3 @@
-// src/utils/backup.ts
 import type {
   Apartamento,
   ChecklistComodo,
@@ -8,17 +7,11 @@ import type {
   TabelaComodos,
 } from "../types";
 
-/* =========================================================================
- * Tipos básicos do arquivo de backup
- * ========================================================================= */
 export type AppData = {
   schemaVersion: number;
   condominios: Condominio[];
 };
 
-/* =========================================================================
- * Utilidades gerais (sem 'any')
- * ========================================================================= */
 const norm = (s: string) =>
   s
     .normalize("NFD")
@@ -36,13 +29,10 @@ const put = <T>(obj: AnyRec, key: string, val: T) => {
   (obj as { [k: string]: T })[key] = val;
 };
 
-/* =========================================================================
- * Leitura/validação do arquivo
- * ========================================================================= */
 export async function readBackupFile(file: File): Promise<AppData> {
   const text = await file.text();
   const parsed: unknown = JSON.parse(text);
-  // normaliza para garantir fotos string[9], arrays presentes, etc.
+
   normalizeRoot(parsed);
   return parsed as AppData;
 }
@@ -52,11 +42,6 @@ export function isValidAppData(v: unknown): v is AppData {
   return typeof v.schemaVersion === "number" && Array.isArray(v.condominios);
 }
 
-/* =========================================================================
- * Normalização do JSON (sem 'any')
- * - garante que blocos/casas existam como array
- * - garante que cada unidade tenha exatamente 9 fotos string
- * ========================================================================= */
 function normalizeUnidade(u: unknown): void {
   if (!isRec(u)) return;
 
@@ -97,9 +82,6 @@ function normalizeRoot(data: unknown): void {
   }
 }
 
-/* =========================================================================
- * Merge profundo das unidades (apartamentos/casas)
- * ========================================================================= */
 const COMODO_COLS: (keyof ChecklistComodo)[] = [
   "Tugs e Tues",
   "Iluminação",
@@ -203,9 +185,6 @@ function mergeUnidade(a: Apartamento, b: Apartamento): Apartamento {
   };
 }
 
-/* =========================================================================
- * Merge de blocos/apartamentos
- * ========================================================================= */
 function mergeBlocos(dest: Condominio, src: Condominio) {
   dest.blocos ??= [];
   const byId = new Map(dest.blocos.map((b) => [norm(b.id), b]));
@@ -218,7 +197,7 @@ function mergeBlocos(dest: Condominio, src: Condominio) {
       byId.set(key, bInc);
       continue;
     }
-    // mesmo bloco: unir apartamentos
+
     bCur.apartamentos ??= [];
     const aptById = new Map(bCur.apartamentos.map((a) => [norm(a.id), a]));
     for (const aInc of bInc.apartamentos ?? []) {
@@ -235,9 +214,6 @@ function mergeBlocos(dest: Condominio, src: Condominio) {
   }
 }
 
-/* =========================================================================
- * Merge de casas (sem 'any')
- * ========================================================================= */
 function readCasas(c: Condominio): Apartamento[] {
   const rec = c as Record<string, unknown>;
   const raw = rec["casas"];
@@ -273,9 +249,6 @@ function mergeCasas(dest: Condominio, src: Condominio) {
   }
 }
 
-/* =========================================================================
- * Função principal usada pelo botão "Acrescentar"
- * ========================================================================= */
 export async function mergeAppData(
   current: AppData,
   incoming: AppData
@@ -291,14 +264,9 @@ export async function mergeAppData(
       continue;
     }
 
-    // condomínio já existe: unir conteúdos
     const cCur = out.condominios[idx];
     mergeBlocos(cCur, cInc);
     mergeCasas(cCur, cInc);
-
-    // Mantemos o tipo do destino (para não “mudar de natureza” por engano).
-    // Se preferir priorizar o tipo do arquivo, é só descomentar:
-    // cCur.tipo = cInc.tipo;
   }
 
   return out;

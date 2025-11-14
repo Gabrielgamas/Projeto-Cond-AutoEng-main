@@ -100,7 +100,6 @@ function imageToJpegDataUrl(
   return canvas.toDataURL("image/jpeg", quality);
 }
 
-// Converte dataURL base64 -> Blob (usado no merge de importação)
 export function dataUrlToBlob(dataUrl: string): Blob {
   const arr = dataUrl.split(",");
   const mimeMatch = arr[0].match(/:(.*?);/);

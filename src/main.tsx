@@ -1,11 +1,10 @@
-import "./index.css"; // ✅ mantém o Tailwind ativo
+import "./index.css";
 
 import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
 import { ensurePersistentStorage } from "./utils/storage";
 
-// PWA
 import { registerSW } from "virtual:pwa-register";
 registerSW({ immediate: true });
 

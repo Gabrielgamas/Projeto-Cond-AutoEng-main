@@ -38,7 +38,6 @@ export default function Home() {
       <div className="max-w-5xl mx-auto space-y-6">
         <h1 className="text-2xl font-bold">Condomínios</h1>
 
-        {/* adicionar condomínio */}
         <div className="flex flex-col md:flex-row gap-2 md:items-center">
           <input
             value={nomeCondominio}
@@ -51,7 +50,6 @@ export default function Home() {
             className="border rounded-lg px-3 py-2 flex-1"
           />
 
-          {/* seletor de layout */}
           <div className="flex gap-2">
             <label
               className={`px-3 py-2 rounded-lg border cursor-pointer ${
@@ -98,10 +96,8 @@ export default function Home() {
           <BackupControls />
         </div>
 
-        {/* mensagem de erro */}
         {errorMsg && <div className="text-sm text-red-600">{errorMsg}</div>}
 
-        {/* lista */}
         <div className="grid md:grid-cols-2 gap-4">
           {data.condominios.map((c) => {
             const totalAptos =

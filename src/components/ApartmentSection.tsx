@@ -9,7 +9,7 @@ import Galeria9Fotos from "./Galeria9Fotos";
 type Props = Readonly<{
   apto: Apartamento;
   onSave: (apto: Apartamento) => void;
-  label?: string; // chama upsertApartamento
+  label?: string;
 }>;
 
 export default function ApartmentSection({
@@ -17,11 +17,9 @@ export default function ApartmentSection({
   onSave,
   label = "Apartamento",
 }: Props) {
-  // abre por padrão
   const [open, setOpen] = useState<boolean>(true);
 
   function update<K extends keyof Apartamento>(key: K, value: Apartamento[K]) {
-    // guarda sempre um novo objeto (imutável)
     onSave({ ...apto, [key]: value });
   }
 
@@ -31,7 +29,6 @@ export default function ApartmentSection({
 
   return (
     <div className="rounded-xl border p-3 bg-white">
-      {/* Cabeçalho / botão de expandir */}
       <div className="flex items-center justify-between">
         <button
           type="button"
@@ -91,10 +88,9 @@ export default function ApartmentSection({
           <section>
             <h4 className="font-semibold mb-2">Fotos (9/9)</h4>
             <Galeria9Fotos
-              value={apto.fotos} // array de 9 strings (chaves ou "")
+              value={apto.fotos}
               onChange={(fotos) =>
                 onSave({
-                  // salve apenas as CHAVES no estado
                   ...apto,
                   fotos,
                 })

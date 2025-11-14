@@ -1,4 +1,3 @@
-// src/components/GenerateLaudoButton.tsx
 import { generateCondominioPDF } from "../utils/pdf";
 import type { Condominio } from "../types";
 
@@ -10,14 +9,12 @@ type Props = Readonly<{
 export default function GenerateLaudoButton({ condominio, className }: Props) {
   async function handleClick() {
     try {
-      await generateCondominioPDF(condominio); // ✅ apenas 1 argumento
+      await generateCondominioPDF(condominio);
     } catch (e) {
       const msg =
         e instanceof Error ? e.message : "Erro inesperado ao gerar o laudo.";
-      // use o tratamento que preferir (toast/alert/etc)
+
       alert(msg);
-      // console opcional para depuração:
-      // console.error(e);
     }
   }
 

@@ -4,7 +4,7 @@ import Modal from "./Modal";
 type Props = Readonly<{
   open: boolean;
   onClose: () => void;
-  entityLabel: string; // ex: 'o Condomínio "Aurora"'
+  entityLabel: string;
   onConfirm: () => void;
 }>;
 

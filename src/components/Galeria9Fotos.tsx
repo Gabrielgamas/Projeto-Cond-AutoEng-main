@@ -10,7 +10,6 @@ import {
 import { getStorageBudget } from "../utils/storageBudget";
 
 type Props = {
-  /** 9 posições: chave @img:... ou "" */
   value: string[];
   onChange: (v: string[]) => void;
   showRemove?: boolean;
@@ -25,24 +24,19 @@ export default function Galeria9Fotos({
   disabled = false,
   className = "",
 }: Props) {
-  // sempre trabalhar com 9 slots
   const slots = React.useMemo(
     () => Array.from({ length: 9 }, (_, i) => value[i] ?? ""),
     [value]
   );
 
-  // state com DataURLs resolvidos para exibir
   const [resolved, setResolved] = React.useState<string[]>(() =>
     Array.from({ length: 9 }, () => "")
   );
 
-  // refs dos inputs por-célula
   const inputRefs = React.useRef<Array<HTMLInputElement | null>>([]);
 
-  // ref para input de multiseleção
   const multiInputRef = React.useRef<HTMLInputElement | null>(null);
 
-  // estilo de input escondido (sem display:none para iOS)
   const hiddenInputStyle: React.CSSProperties = {
     position: "absolute",
     width: 0.5,
@@ -52,7 +46,6 @@ export default function Galeria9Fotos({
     zIndex: -1,
   };
 
-  // resolve chaves -> dataurl a cada mudança dos slots
   React.useEffect(() => {
     let alive = true;
     (async () => {
@@ -83,7 +76,6 @@ export default function Galeria9Fotos({
   async function handlePick(idx: number, file: File | null) {
     if (!file || disabled) return;
 
-    // Checa orçamento antes de salvar
     const budget = await getStorageBudget();
     if (budget && budget.quota && budget.pct > 0.8) {
       alert(
@@ -111,7 +103,6 @@ export default function Galeria9Fotos({
     inputRefs.current[idx]?.click();
   }
 
-  // —— NOVO: Adicionar múltiplas fotos de uma vez ——
   function openMultiPicker() {
     if (disabled) return;
     multiInputRef.current?.click();
@@ -120,7 +111,6 @@ export default function Galeria9Fotos({
   async function handleMultiSelect(files: FileList | null) {
     if (!files || disabled) return;
 
-    // Encontra índices vazios disponíveis
     const emptyIdxs = slots
       .map((v, i) => (v ? -1 : i))
       .filter((i) => i >= 0)
@@ -131,10 +121,8 @@ export default function Galeria9Fotos({
       return;
     }
 
-    // Vamos processar somente até o número de espaços vazios
     const toProcess: File[] = Array.from(files).slice(0, emptyIdxs.length);
 
-    // Checa orçamento antes do processamento (rápido)
     const budget = await getStorageBudget();
     if (budget && budget.quota && budget.pct > 0.8) {
       alert(
@@ -143,7 +131,6 @@ export default function Galeria9Fotos({
       return;
     }
 
-    // Processa sequencialmente para não estourar memória
     const producedKeys: string[] = [];
     for (const f of toProcess) {
       const dataUrl = await normalizeImageFile(f);
@@ -162,7 +149,6 @@ export default function Galeria9Fotos({
 
   return (
     <div className={`space-y-2 ${className}`}>
-      {/* Barra de ações da galeria */}
       <div className="flex items-center gap-2">
         <button
           type="button"
@@ -178,7 +164,6 @@ export default function Galeria9Fotos({
           Adicionar várias
         </button>
 
-        {/* input para multiseleção (não usar display:none) */}
         <input
           ref={multiInputRef}
           type="file"
@@ -187,13 +172,12 @@ export default function Galeria9Fotos({
           style={hiddenInputStyle}
           onChange={(e) => {
             void handleMultiSelect(e.target.files);
-            // permite re-selecionar os mesmos arquivos depois
+
             e.currentTarget.value = "";
           }}
         />
       </div>
 
-      {/* Grade 3x3 */}
       <div className="grid grid-cols-3 gap-2">
         {slots.map((_, idx) => {
           const src = resolved[idx] || "";
@@ -218,7 +202,6 @@ export default function Galeria9Fotos({
                 </div>
               )}
 
-              {/* input real da célula */}
               <input
                 ref={(el: HTMLInputElement | null) => {
                   inputRefs.current[idx] = el;

@@ -1,4 +1,3 @@
-// src/state/AppStateContext.tsx
 import React, {
   createContext,
   useContext,
@@ -17,8 +16,6 @@ import type {
 } from "../types";
 import { materializePhotosToKeys } from "../utils/photoPersist";
 
-/* ============================= Persistência ============================= */
-
 const STORAGE_KEY = "autoeng-data";
 
 export type AppState = {
@@ -36,25 +33,19 @@ function loadState(): AppState {
   return { schemaVersion: 2, condominios: [] };
 }
 
-/** Converte DataURLs de fotos para chaves (@img:...) e grava no localStorage */
 async function saveStateAsync(s: AppState): Promise<void> {
   try {
     const toSave = await materializePhotosToKeys(s);
     localStorage.setItem(STORAGE_KEY, JSON.stringify(toSave));
   } catch (e) {
-    // evita tela branca caso a quota estoure por algum motivo
     console.warn("Falha ao salvar estado (quota/localStorage):", e);
   }
 }
 
-/** Wrapper para manter assinatura síncrona nos pontos de chamada */
 function saveState(s: AppState) {
   void saveStateAsync(s);
 }
 
-/* ============================ Helpers gerais ============================ */
-
-// normaliza textos p/ comparação (case-insensitive, sem acento/esp. extras)
 const norm = (s: string) =>
   s
     .normalize("NFD")
@@ -64,8 +55,6 @@ const norm = (s: string) =>
     .replace(/\s+/g, " ");
 
 type OpResult = { ok: true } | { ok: false; error: string };
-
-/* ====================== Fábricas de objetos (tipadas) ==================== */
 
 function createChecklistComodoAllTrue(): ChecklistComodo {
   return {
@@ -114,8 +103,6 @@ function createUnidadeDefault(id: string): Apartamento {
   };
 }
 
-/* =============================== Contexto =============================== */
-
 type Ctx = {
   data: AppState;
   setData: React.Dispatch<React.SetStateAction<AppState>>;
@@ -146,12 +133,11 @@ const AppStateContext = createContext<Ctx | null>(null);
 export function AppStateProvider({ children }: { children: React.ReactNode }) {
   const [data, setData] = useState<AppState>(() => loadState());
 
-  // Migração 1x: se houver DataURLs no JSON já salvo, converte para chaves
   useEffect(() => {
     (async () => {
       try {
         const migrated = await materializePhotosToKeys(data);
-        // salva apenas se mudou
+
         if (JSON.stringify(migrated) !== JSON.stringify(data)) {
           setData(migrated);
           await saveStateAsync(migrated);
@@ -167,8 +153,6 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
     setData(d);
     saveState(d);
   };
-
-  /* ===================== Ações com validação de duplicados ===================== */
 
   function addCondominio(nomeRaw: string, tipo: CondominioTipo): OpResult {
     const nome = nomeRaw.trim();

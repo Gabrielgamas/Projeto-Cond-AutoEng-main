@@ -37,11 +37,11 @@ const baseEspecificacao: Especificacao = {
 export function createApartamento(id: string): Apartamento {
   return {
     id,
-    // clone profundo simples para evitar compartilhamento de referência
+
     comodos: JSON.parse(JSON.stringify(baseComodos)) as TabelaComodos,
     quadro: { ...baseQuadro },
     especificacoes: { ...baseEspecificacao },
     erros: [],
-    fotos: Array(9).fill(""), // 9 slots vazios
+    fotos: Array(9).fill(""),
   };
 }

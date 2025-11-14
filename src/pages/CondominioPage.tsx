@@ -15,10 +15,10 @@ export default function CondominioPage() {
     removeBloco,
     addApartamento,
     removeApartamento,
-    upsertApartamento, // <-- agora existe no contexto
+    upsertApartamento,
     addCasa,
     removeCasa,
-    upsertCasa, // <-- agora existe no contexto
+    upsertCasa,
   } = useAppState();
 
   const cond = useMemo(
@@ -26,7 +26,6 @@ export default function CondominioPage() {
     [data, condId]
   );
 
-  // se não existe, retorna antes de declarar handlers
   if (!cond) {
     return (
       <main className="p-4">
@@ -40,7 +39,6 @@ export default function CondominioPage() {
     );
   }
 
-  // inputs e erros
   const [idBloco, setIdBloco] = useState("");
   const [idAptoPorBloco, setIdAptoPorBloco] = useState<Record<string, string>>(
     {}
@@ -59,7 +57,6 @@ export default function CondominioPage() {
     onConfirm: () => void;
   }>({ open: false, label: "", onConfirm: () => {} });
 
-  // Handlers — podem usar cond!.id com segurança
   function handleAddBloco() {
     const id = idBloco.trim();
     if (!id) {

@@ -5,7 +5,7 @@ type ModalProps = Readonly<{
   open: boolean;
   onClose: () => void;
   title?: string;
-  widthClass?: string; // ex: "max-w-md"
+  widthClass?: string;
 }>;
 
 export default function Modal({
@@ -17,19 +17,16 @@ export default function Modal({
 }: PropsWithChildren<ModalProps>) {
   const dialogRef = useRef<HTMLDialogElement>(null);
 
-  // abre/fecha o <dialog> de forma controlada
   useEffect(() => {
     const el = dialogRef.current;
     if (!el) return;
 
     function onCancel(e: Event) {
-      // evita fechar pelo ESC sem nosso onClose (para manter consistência)
       e.preventDefault();
       onClose();
     }
 
     if (open) {
-      // impede scroll de fundo
       document.body.style.overflow = "hidden";
       if (!el.open) el.showModal();
       el.addEventListener("cancel", onCancel);
@@ -50,10 +47,8 @@ export default function Modal({
   return (
     <dialog
       ref={dialogRef}
-      // <dialog> já é acessível, não precisamos de role="dialog"
       className="m-0 p-0 w-full h-full bg-transparent overflow-visible"
     >
-      {/* Backdrop acessível: elemento interativo com tecla Enter/Espaço */}
       <button
         type="button"
         aria-label="Fechar modal"
